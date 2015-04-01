@@ -25,7 +25,6 @@
 #include <linux/msm_mdp.h>
 #include <sys/resource.h>
 #include <sys/prctl.h>
-#include <poll.h>
 #include "hwc_utils.h"
 #include "string.h"
 #include "external.h"
@@ -34,11 +33,6 @@
 namespace qhwc {
 
 #define HWC_VSYNC_THREAD_NAME "hwcVsyncThread"
-#define MAX_SYSFS_FILE_PATH             255
-#define PANEL_ON_STR "panel_power_on ="
-#define ARRAY_LENGTH(array) (sizeof((array))/sizeof((array)[0]))
-const int MAX_DATA = 64;
-bool logvsync = false;
 
 int hwc_vsync_control(hwc_context_t* ctx, int dpy, int enable)
 {
@@ -53,42 +47,12 @@ int hwc_vsync_control(hwc_context_t* ctx, int dpy, int enable)
     return ret;
 }
 
-static void handle_vsync_event(hwc_context_t* ctx, int dpy, char *data)
-{
-    // extract timestamp
-    uint64_t timestamp = 0;
-    if (!strncmp(data, "VSYNC=", strlen("VSYNC="))) {
-        timestamp = strtoull(data + strlen("VSYNC="), NULL, 0);
-    }
-    // send timestamp to SurfaceFlinger
-    ALOGD_IF (logvsync, "%s: timestamp %llu sent to SF for dpy=%d",
-            __FUNCTION__, timestamp, dpy);
-    ctx->proc->vsync(ctx->proc, dpy, timestamp);
-}
-
-static void handle_blank_event(hwc_context_t* ctx, int dpy, char *data)
-{
-    if (!strncmp(data, PANEL_ON_STR, strlen(PANEL_ON_STR))) {
-        uint32_t poweron = strtoul(data + strlen(PANEL_ON_STR), NULL, 0);
-        ALOGI("%s: dpy:%d panel power state: %d", __FUNCTION__, dpy, poweron);
-        ctx->dpyAttr[dpy].isActive = poweron ? true: false;
-    }
-}
-
-struct event {
-    const char* name;
-    void (*callback)(hwc_context_t* ctx, int dpy, char *data);
-};
-
-struct event event_list[] =  {
-    { "vsync_event", handle_vsync_event },
-    { "show_blank_event", handle_blank_event },
-};
-
-#define num_events ARRAY_LENGTH(event_list)
-
 static void *vsync_loop(void *param)
 {
+    const char* vsync_timestamp_fb0 = "/sys/class/graphics/fb0/vsync_event";
+    const char* vsync_timestamp_fb1 = "/sys/class/graphics/fb1/vsync_event";
+    int dpy = HWC_DISPLAY_PRIMARY;
+
     hwc_context_t * ctx = reinterpret_cast<hwc_context_t *>(param);
 
     char thread_name[64] = HWC_VSYNC_THREAD_NAME;
@@ -96,11 +60,15 @@ static void *vsync_loop(void *param)
     setpriority(PRIO_PROCESS, 0, HAL_PRIORITY_URGENT_DISPLAY +
                 android::PRIORITY_MORE_FAVORABLE);
 
-    char vdata[MAX_DATA];
-    //Number of physical displays
-    //We poll on all the nodes.
-    int num_displays = HWC_NUM_DISPLAY_TYPES - 1;
-    struct pollfd pfd[num_displays][num_events];
+    const int MAX_DATA = 64;
+    static char vdata[MAX_DATA];
+
+    uint64_t cur_timestamp=0;
+    ssize_t len = -1;
+    int fd_timestamp = -1;
+    int ret = 0;
+    bool fb1_vsync = false;
+    bool logvsync = false;
 
     char property[PROPERTY_VALUE_MAX];
     if(property_get("debug.hwc.fakevsync", property, NULL) > 0) {
@@ -113,88 +81,53 @@ static void *vsync_loop(void *param)
             logvsync = true;
     }
 
-    char node_path[MAX_SYSFS_FILE_PATH];
-
-    for (int dpy = HWC_DISPLAY_PRIMARY; dpy < num_displays; dpy++) {
-        for(size_t ev = 0; ev < num_events; ev++) {
-            snprintf(node_path, sizeof(node_path),
-                    "/sys/class/graphics/fb%d/%s",
-                    dpy == HWC_DISPLAY_PRIMARY ? 0 :
-                    overlay::Overlay::getInstance()->
-                    getFbForDpy(HWC_DISPLAY_EXTERNAL),
-                    event_list[ev].name);
-
-            ALOGI("%s: Reading event %zu for dpy %d from %s", __FUNCTION__,
-                    ev, dpy, node_path);
-            pfd[dpy][ev].fd = open(node_path, O_RDONLY);
-
-            if (dpy == HWC_DISPLAY_PRIMARY && pfd[dpy][ev].fd < 0) {
-                // Make sure fb device is opened before starting
-                // this thread so this never happens.
-                ALOGE ("%s:unable to open event node for dpy=%d event=%zu, %s",
-                        __FUNCTION__, dpy, ev, strerror(errno));
-                if (ev == 0) {
-                    ctx->vstate.fakevsync = true;
-                    //XXX: Blank events don't work with fake vsync,
-                    //but we shouldn't be running on fake vsync anyway.
-                    break;
-                }
-            }
-
-            pread(pfd[dpy][ev].fd, vdata , MAX_DATA, 0);
-            if (pfd[dpy][ev].fd >= 0)
-                pfd[dpy][ev].events = POLLPRI | POLLERR;
-        }
+    /* Currently read vsync timestamp from drivers
+       e.g. VSYNC=41800875994
+       */
+    fd_timestamp = open(vsync_timestamp_fb0, O_RDONLY);
+    if (fd_timestamp < 0) {
+        // Make sure fb device is opened before starting this thread so this
+        // never happens.
+        ALOGE ("FATAL:%s:not able to open file:%s, %s",  __FUNCTION__,
+               (fb1_vsync) ? vsync_timestamp_fb1 : vsync_timestamp_fb0,
+               strerror(errno));
+        ctx->vstate.fakevsync = true;
     }
 
-    if (LIKELY(!ctx->vstate.fakevsync)) {
-        do {
-            int err = poll(*pfd, num_displays * num_events, -1);
-            if(err > 0) {
-                for (int dpy = HWC_DISPLAY_PRIMARY; dpy < num_displays; dpy++) {
-                    for(size_t ev = 0; ev < num_events; ev++) {
-                        if (pfd[dpy][ev].revents & POLLPRI) {
-                            err = pread(pfd[dpy][ev].fd, vdata, MAX_DATA, 0);
-                            if (UNLIKELY(err < 0)) {
-                                // If the read was just interrupted - it is not
-                                // a fatal error. Just continue in this case
-                                ALOGE ("%s: Unable to read event:%zu for \
-                                        dpy=%d : %s",
-                                        __FUNCTION__, ev, dpy, strerror(errno));
-                                continue;
-                            }
-                            event_list[ev].callback(ctx, dpy, vdata);
-                        }
-                    }
+    do {
+        if (LIKELY(!ctx->vstate.fakevsync)) {
+            len = pread(fd_timestamp, vdata, MAX_DATA, 0);
+            if (len < 0) {
+                // If the read was just interrupted - it is not a fatal error
+                // In either case, just continue.
+                if (errno != EAGAIN &&
+                    errno != EINTR  &&
+                    errno != EBUSY) {
+                    ALOGE ("FATAL:%s:not able to read file:%s, %s",
+                           __FUNCTION__,
+                           vsync_timestamp_fb0, strerror(errno));
                 }
-            } else {
-                ALOGE("%s: poll failed errno: %s", __FUNCTION__,
-                        strerror(errno));
                 continue;
             }
-        } while (true);
-
-    } else {
-
-        //Fake vsync is used only when set explicitly through a property or when
-        //the vsync timestamp node cannot be opened at bootup. There is no
-        //fallback to fake vsync from the true vsync loop, ever, as the
-        //condition can easily escape detection.
-        //Also, fake vsync is delivered only for the primary display.
-        do {
+            // extract timestamp
+            const char *str = vdata;
+            if (!strncmp(str, "VSYNC=", strlen("VSYNC="))) {
+                cur_timestamp = strtoull(str + strlen("VSYNC="), NULL, 0);
+            }
+        } else {
             usleep(16666);
-            uint64_t timestamp = systemTime();
-            ctx->proc->vsync(ctx->proc, HWC_DISPLAY_PRIMARY, timestamp);
-
-        } while (true);
-    }
-
-    for (int dpy = HWC_DISPLAY_PRIMARY; dpy <= HWC_DISPLAY_EXTERNAL; dpy++ ) {
-        for( size_t event = 0; event < num_events; event++) {
-            if(pfd[dpy][event].fd >= 0)
-                close (pfd[dpy][event].fd);
+            cur_timestamp = systemTime();
         }
-    }
+        // send timestamp to HAL
+        if(ctx->vstate.enable) {
+            ALOGD_IF (logvsync, "%s: timestamp %llu sent to HWC for %s",
+                      __FUNCTION__, cur_timestamp, "fb0");
+            ctx->proc->vsync(ctx->proc, dpy, cur_timestamp);
+        }
+
+    } while (true);
+    if(fd_timestamp >= 0)
+        close (fd_timestamp);
 
     return NULL;
 }

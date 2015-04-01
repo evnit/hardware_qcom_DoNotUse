@@ -44,6 +44,9 @@ gpu_context_t::gpu_context_t(const private_module_t* module,
     common.module  = const_cast<hw_module_t*>(&module->base.common);
     common.close   = gralloc_close;
     alloc          = gralloc_alloc;
+#ifdef QCOM_BSP
+    allocSize      = gralloc_alloc_size;
+#endif
     free           = gralloc_free;
 
 }
@@ -66,9 +69,8 @@ int gpu_context_t::gralloc_alloc_buffer(size_t size, int usage,
 
     /* force 1MB alignment selectively for secure buffers, MDP5 onwards */
 #ifdef MDSS_TARGET
-    if ((usage & GRALLOC_USAGE_PROTECTED) &&
-        (usage & GRALLOC_USAGE_PRIVATE_MM_HEAP)) {
-        data.align = ALIGN((int) data.align, SZ_1M);
+    if (usage & GRALLOC_USAGE_PROTECTED) {
+        data.align = ALIGN(data.align, SZ_1M);
         size = ALIGN(size, data.align);
     }
 #endif
@@ -100,17 +102,11 @@ int gpu_context_t::gralloc_alloc_buffer(size_t size, int usage,
 #ifndef MDSS_TARGET
                 flags |= private_handle_t::PRIV_FLAGS_ITU_R_601_FR;
 #else
-                // Per the camera spec ITU 709 format should be set only for
-                // video encoding.
-                // It should be set to ITU 601 full range format for any other
-                // camera buffer
-                //
-                if (usage & GRALLOC_USAGE_HW_CAMERA_MASK) {
-                    if (usage & GRALLOC_USAGE_HW_VIDEO_ENCODER)
+                    if (usage & (GRALLOC_USAGE_HW_TEXTURE |
+                                 GRALLOC_USAGE_HW_VIDEO_ENCODER))
                         flags |= private_handle_t::PRIV_FLAGS_ITU_R_709;
-                    else
+                    else if (usage & GRALLOC_USAGE_HW_CAMERA_ZSL)
                         flags |= private_handle_t::PRIV_FLAGS_ITU_R_601_FR;
-                }
 #endif
             } else {
                 flags |= private_handle_t::PRIV_FLAGS_ITU_R_601;
@@ -139,17 +135,6 @@ int gpu_context_t::gralloc_alloc_buffer(size_t size, int usage,
 
         if(usage & GRALLOC_USAGE_PRIVATE_SECURE_DISPLAY) {
             flags |= private_handle_t::PRIV_FLAGS_SECURE_DISPLAY;
-        }
-
-        if (usage & (GRALLOC_USAGE_HW_VIDEO_ENCODER |
-                GRALLOC_USAGE_HW_CAMERA_WRITE |
-                GRALLOC_USAGE_HW_RENDER |
-                GRALLOC_USAGE_HW_FB)) {
-            flags |= private_handle_t::PRIV_FLAGS_NON_CPU_WRITER;
-        }
-
-        if(false == data.uncached) {
-            flags |= private_handle_t::PRIV_FLAGS_CACHED;
         }
 
         flags |= data.allocType;
@@ -289,6 +274,13 @@ int gpu_context_t::alloc_impl(int w, int h, int format, int usage,
     if ((ssize_t)size <= 0)
         return -EINVAL;
     size = (bufferSize >= size)? bufferSize : size;
+
+    // All buffers marked as protected or for external
+    // display need to go to overlay
+    if ((usage & GRALLOC_USAGE_EXTERNAL_DISP) ||
+        (usage & GRALLOC_USAGE_PROTECTED)) {
+        bufferType = BUFFER_TYPE_VIDEO;
+    }
 
     bool useFbMem = false;
     char property[PROPERTY_VALUE_MAX];

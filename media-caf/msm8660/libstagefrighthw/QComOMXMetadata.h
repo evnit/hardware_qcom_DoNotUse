@@ -19,17 +19,13 @@
 
 namespace android {
 
+    /*typedef enum {
+        kMetadataBufferTypeCameraSource  = 0,
+        kMetadataBufferTypeGrallocSource = 1,
+    } MetadataBufferType;*/
+
     typedef struct encoder_media_buffer_type {
-        MetadataBufferType buffer_type;
+         MetadataBufferType buffer_type;
         buffer_handle_t meta_handle;
     } encoder_media_buffer_type;
-
-#ifdef METADATA_FOR_DYNAMIC_MODE
-    // Meta data buffer layout used to transport output frames to the decoder for
-    // dynamic buffer handling.
-    struct VideoDecoderOutputMetaData {
-        MetadataBufferType eType;
-        buffer_handle_t pHandle;
-    };
-#endif
 }

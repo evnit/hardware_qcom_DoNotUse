@@ -42,8 +42,6 @@
 #include <errno.h>
 #include "overlayUtils.h"
 
-#define IOCTL_DEBUG 0
-
 namespace overlay{
 
 namespace mdp_wrapper{
@@ -65,9 +63,6 @@ bool rotate(int fd, msm_rotator_data_info& rot);
 /* MSMFB_OVERLAY_SET */
 bool setOverlay(int fd, mdp_overlay& ov);
 
-/* MSMFB_OVERLAY_PREPARE */
-bool validateAndSet(const int& fd, mdp_overlay_list& list);
-
 /* MSM_ROTATOR_IOCTL_FINISH */
 bool endRotator(int fd, int sessionId);
 
@@ -85,18 +80,6 @@ bool set3D(int fd, msmfb_overlay_3d& ov);
 
 /* MSMFB_DISPLAY_COMMIT */
 bool displayCommit(int fd);
-
-/* MSMFB_WRITEBACK_INIT, MSMFB_WRITEBACK_START */
-bool wbInitStart(int fbfd);
-
-/* MSMFB_WRITEBACK_STOP, MSMFB_WRITEBACK_TERMINATE */
-bool wbStopTerminate(int fbfd);
-
-/* MSMFB_WRITEBACK_QUEUE_BUFFER */
-bool wbQueueBuffer(int fbfd, struct msmfb_data& fbData);
-
-/* MSMFB_WRITEBACK_DEQUEUE_BUFFER */
-bool wbDequeueBuffer(int fbfd, struct msmfb_data& fbData);
 
 /* the following are helper functions for dumping
  * msm_mdp and friends*/
@@ -172,15 +155,6 @@ inline bool setOverlay(int fd, mdp_overlay& ov) {
     return true;
 }
 
-inline bool validateAndSet(const int& fd, mdp_overlay_list& list) {
-    if (ioctl(fd, MSMFB_OVERLAY_PREPARE, &list) < 0) {
-        ALOGD_IF(IOCTL_DEBUG, "Failed to call ioctl MSMFB_OVERLAY_PREPARE "
-                "err=%s", strerror(errno));
-        return false;
-    }
-    return true;
-}
-
 inline bool endRotator(int fd, uint32_t sessionId) {
     if (ioctl(fd, MSM_ROTATOR_IOCTL_FINISH, &sessionId) < 0) {
         ALOGE("Failed to call ioctl MSM_ROTATOR_IOCTL_FINISH err=%s",
@@ -229,52 +203,6 @@ inline bool set3D(int fd, msmfb_overlay_3d& ov) {
 inline bool displayCommit(int fd, mdp_display_commit& info) {
     if(ioctl(fd, MSMFB_DISPLAY_COMMIT, &info) == -1) {
         ALOGE("Failed to call ioctl MSMFB_DISPLAY_COMMIT err=%s",
-                strerror(errno));
-        return false;
-    }
-    return true;
-}
-
-inline bool wbInitStart(int fbfd) {
-    if(ioctl(fbfd, MSMFB_WRITEBACK_INIT, NULL) < 0) {
-        ALOGE("Failed to call ioctl MSMFB_WRITEBACK_INIT err=%s",
-                strerror(errno));
-        return false;
-    }
-    if(ioctl(fbfd, MSMFB_WRITEBACK_START, NULL) < 0) {
-        ALOGE("Failed to call ioctl MSMFB_WRITEBACK_START err=%s",
-                strerror(errno));
-        return false;
-    }
-    return true;
-}
-
-inline bool wbStopTerminate(int fbfd) {
-    if(ioctl(fbfd, MSMFB_WRITEBACK_STOP, NULL) < 0) {
-        ALOGE("Failed to call ioctl MSMFB_WRITEBACK_STOP err=%s",
-                strerror(errno));
-        return false;
-    }
-    if(ioctl(fbfd, MSMFB_WRITEBACK_TERMINATE, NULL) < 0) {
-        ALOGE("Failed to call ioctl MSMFB_WRITEBACK_TERMINATE err=%s",
-                strerror(errno));
-        return false;
-    }
-    return true;
-}
-
-inline bool wbQueueBuffer(int fbfd, struct msmfb_data& fbData) {
-    if(ioctl(fbfd, MSMFB_WRITEBACK_QUEUE_BUFFER, &fbData) < 0) {
-        ALOGE("Failed to call ioctl MSMFB_WRITEBACK_QUEUE_BUFFER err=%s",
-                strerror(errno));
-        return false;
-    }
-    return true;
-}
-
-inline bool wbDequeueBuffer(int fbfd, struct msmfb_data& fbData) {
-    if(ioctl(fbfd, MSMFB_WRITEBACK_DEQUEUE_BUFFER, &fbData) < 0) {
-        ALOGE("Failed to call ioctl MSMFB_WRITEBACK_DEQUEUE_BUFFER err=%s",
                 strerror(errno));
         return false;
     }

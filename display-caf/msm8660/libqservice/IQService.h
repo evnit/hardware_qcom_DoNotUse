@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2010 The Android Open Source Project
- * Copyright (C) 2012-2014, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2012-2013, The Linux Foundation. All rights reserved.
  *
  * Not a Contribution, Apache license notifications and license are
  * retained for attribution purposes only.
@@ -29,10 +29,8 @@
 #include <binder/IBinder.h>
 #include <IQClient.h>
 
-
 namespace qService {
 // ----------------------------------------------------------------------------
-
 class IQService : public android::IInterface
 {
 public:
@@ -48,22 +46,15 @@ public:
         CHECK_EXTERNAL_STATUS,   // Check status of external display
         GET_DISPLAY_ATTRIBUTES,  // Get display attributes
         SET_HSIC_DATA,           // Set HSIC on dspp
-        GET_DISPLAY_VISIBLE_REGION,  // Get the visibleRegion for dpy
-        PAUSE_WFD,               // Pause/Resume WFD
-        SET_WFD_STATUS,          // Set if wfd connection is on/off
-        SET_PTOR_MODE, //set PTOR mode enable or disable
-        VPU_COMMAND_LIST_START = 100, //Reserved block for VPU commands
-        VPU_COMMAND_LIST_END   = 200,
+	GET_DISPLAY_VISIBLE_REGION,  // Get the visibleRegion for dpy
         SET_VIEW_FRAME,          // Set view frame of display
         COMMAND_LIST_END = 400,
-    };
 
+    };
     enum {
         END = 0,
         START,
     };
-
-    // Register a client that can be notified
     virtual void connect(const android::sp<qClient::IQClient>& client) = 0;
     // Generic function to dispatch binder commands
     // The type of command decides how the data is parceled

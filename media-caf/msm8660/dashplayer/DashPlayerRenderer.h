@@ -112,15 +112,11 @@ private:
     bool mHasVideo;
     bool mSyncQueues;
 
-    bool mIsFirstVideoframeReceived;
-    bool mPendingPostAudioDrains;
-
     bool mPaused;
     bool mWasPaused; // if paused then store the info
 
     int64_t mLastPositionUpdateUs;
     int64_t mVideoLateByUs;
-    int64_t mAVSyncDelayWindowUs;
 
     bool onDrainAudioQueue();
     void postDrainAudioQueue(int64_t delayUs = 0);

@@ -22,10 +22,6 @@ LOCAL_SRC_FILES := \
 
 LOCAL_CFLAGS := $(PV_CFLAGS_MINUS_VISIBILITY)
 
-ifneq ($(call is-platform-sdk-version-at-least,19),true)
-LOCAL_CFLAGS += -DMETADATA_FOR_DYNAMIC_MODE
-endif
-
 LOCAL_C_INCLUDES:= \
         frameworks/native/include/media/openmax \
         frameworks/native/include/media/hardware

@@ -48,16 +48,12 @@
 #include "overlayUtils.h"
 #include "overlay.h"
 #include "mdp_version.h"
-#include "qd_utils.h"
 
 using namespace android;
 
 namespace qhwc {
 
 #define MAX_SYSFS_FILE_PATH             255
-
-/* Max. resolution assignable to virtual display. */
-#define SUPPORTED_VIRTUAL_AREA          (1920*1080)
 
 int VirtualDisplay::configure() {
     if(!openFrameBuffer())
@@ -80,10 +76,6 @@ void VirtualDisplay::getAttributes(int& width, int& height) {
 int VirtualDisplay::teardown() {
     closeFrameBuffer();
     memset(&mVInfo, 0, sizeof(mVInfo));
-    // Reset the resolution when we close the fb for this device. We need
-    // this to distinguish between an ONLINE and RESUME event.
-    mHwcContext->dpyAttr[HWC_DISPLAY_VIRTUAL].xres = 0;
-    mHwcContext->dpyAttr[HWC_DISPLAY_VIRTUAL].yres = 0;
     mHwcContext->dpyAttr[HWC_DISPLAY_VIRTUAL].secure = 0;
     return 0;
 }
@@ -97,78 +89,6 @@ VirtualDisplay::VirtualDisplay(hwc_context_t* ctx):mFd(-1),
 VirtualDisplay::~VirtualDisplay()
 {
     closeFrameBuffer();
-}
-
-/* Initializes the resolution attributes of the virtual display
-   that are reported to SurfaceFlinger.
-   Cases:
-       1. ONLINE event - initialize to frame buffer resolution
-       2. RESUME event - retain original resolution
-*/
-void VirtualDisplay::initResolution(uint32_t &extW, uint32_t &extH) {
-    // On ONLINE event, display resolution attributes are 0.
-    if(extW == 0 || extH == 0){
-        extW = mVInfo.xres;
-        extH = mVInfo.yres;
-    }
-}
-
-/* Sets the virtual resolution to match that of the primary
-   display in the event that the virtual display currently
-   connected has a lower resolution. NB: we always report the
-   highest available resolution to SurfaceFlinger.
-*/
-void VirtualDisplay::setToPrimary(uint32_t maxArea,
-                                  uint32_t priW,
-                                  uint32_t priH,
-                                  uint32_t &extW,
-                                  uint32_t &extH) {
-    // for eg., primary in 1600p and WFD in 1080p
-    // we wont use downscale feature because MAX MDP
-    // writeback resolution supported is 1080p (tracked
-    // by SUPPORTED_VIRTUAL_AREA).
-    if((maxArea == (priW * priH))
-        && (maxArea <= SUPPORTED_VIRTUAL_AREA)) {
-        // tmpW and tmpH will hold the primary dimensions before we
-        // update the aspect ratio if necessary.
-        uint32_t tmpW = priW;
-        uint32_t tmpH = priH;
-        // If WFD is in landscape, assign the higher dimension
-        // to WFD's xres.
-        if(priH > priW) {
-            tmpW = priH;
-            tmpH = priW;
-        }
-        // The aspect ratios of the external and primary displays
-        // can be different. As a result, directly assigning primary
-        // resolution could lead to an incorrect final image.
-        // We get around this by calculating a new resolution by
-        // keeping aspect ratio intact.
-        hwc_rect r = {0, 0, 0, 0};
-        getAspectRatioPosition(tmpW, tmpH, extW, extH, r);
-        extW = r.right - r.left;
-        extH = r.bottom - r.top;
-    }
-}
-
-/* Set External Display MDP Downscale mode indicator. Only set to
-   TRUE for the following scenarios:
-   1. Valid DRC scenarios i.e. when the original WFD resolution
-      is greater than the new/requested resolution in mVInfo.
-   2. WFD down scale path i.e. when WFD resolution is lower than
-      primary resolution.
-   Furthermore, downscale mode is only valid when downscaling from
-   SUPPORTED_VIRTUAL_AREA to a lower resolution.
-   (SUPPORTED_VIRTUAL_AREA represents the maximum resolution that
-   we can configure to the virtual display)
-*/
-void VirtualDisplay::setDownScaleMode(uint32_t maxArea) {
-    if((maxArea > (mVInfo.xres * mVInfo.yres))
-        && (maxArea <= SUPPORTED_VIRTUAL_AREA)) {
-        mHwcContext->dpyAttr[HWC_DISPLAY_VIRTUAL].mDownScaleMode = true;
-    }else {
-        mHwcContext->dpyAttr[HWC_DISPLAY_VIRTUAL].mDownScaleMode = false;
-    }
 }
 
 bool VirtualDisplay::isSinkSecure() {
@@ -205,29 +125,32 @@ bool VirtualDisplay::isSinkSecure() {
 
 void VirtualDisplay::setAttributes() {
     if(mHwcContext) {
-        uint32_t &extW = mHwcContext->dpyAttr[HWC_DISPLAY_VIRTUAL].xres;
-        uint32_t &extH = mHwcContext->dpyAttr[HWC_DISPLAY_VIRTUAL].yres;
+        // Always set dpyAttr res to mVInfo res
+        mHwcContext->dpyAttr[HWC_DISPLAY_VIRTUAL].xres = mVInfo.xres;
+        mHwcContext->dpyAttr[HWC_DISPLAY_VIRTUAL].yres = mVInfo.yres;
+        mHwcContext->dpyAttr[HWC_DISPLAY_VIRTUAL].mDownScaleMode = false;
         uint32_t priW = mHwcContext->dpyAttr[HWC_DISPLAY_PRIMARY].xres;
         uint32_t priH = mHwcContext->dpyAttr[HWC_DISPLAY_PRIMARY].yres;
         bool &secure = mHwcContext->dpyAttr[HWC_DISPLAY_VIRTUAL].secure;
-
-        // Dynamic Resolution Change depends on MDP downscaling.
-        // MDP downscale property will be ignored to exercise DRC use case.
-        // If DRC is in progress, ext WxH will have non-zero values.
-        bool isDRC = (extW > mVInfo.xres) && (extH > mVInfo.yres);
-
-        initResolution(extW, extH);
-
-        if(!qdutils::MDPVersion::getInstance().is8x26()
-                && (mHwcContext->mMDPDownscaleEnabled || isDRC)) {
-
-            // maxArea represents the maximum resolution between
-            // primary and virtual display.
-            uint32_t maxArea = max((extW * extH), (priW * priH));
-
-            setToPrimary(maxArea, priW, priH, extW, extH);
-
-            setDownScaleMode(maxArea);
+        // if primary resolution is more than WFD resolution and
+        // downscale_factor is zero(which corresponds to downscale
+        // to > 50% of orig),then configure dpy attr to primary
+        // resolution and set downscale mode.
+        if((priW * priH) > (mVInfo.xres * mVInfo.yres)) {
+            int downscale_factor = overlay::utils::getDownscaleFactor(priW, priH,
+                                   mVInfo.xres, mVInfo.yres);
+            if(!downscale_factor) {
+                mHwcContext->dpyAttr[HWC_DISPLAY_VIRTUAL].xres = priW;
+                mHwcContext->dpyAttr[HWC_DISPLAY_VIRTUAL].yres = priH;
+                // WFD is always in landscape, so always assign the higher
+                // dimension to wfd's xres
+                if(priH > priW) {
+                    mHwcContext->dpyAttr[HWC_DISPLAY_VIRTUAL].xres = priH;
+                    mHwcContext->dpyAttr[HWC_DISPLAY_VIRTUAL].yres = priW;
+                }
+                // Set External Display MDP Downscale mode indicator
+                mHwcContext->dpyAttr[HWC_DISPLAY_VIRTUAL].mDownScaleMode = true;
+            }
         }
         mHwcContext->dpyAttr[HWC_DISPLAY_VIRTUAL].vsync_period =
                 1000000000l /60;
@@ -248,7 +171,7 @@ bool VirtualDisplay::openFrameBuffer()
                                    getFbForDpy(HWC_DISPLAY_VIRTUAL);
 
         char strDevPath[MAX_SYSFS_FILE_PATH];
-        snprintf(strDevPath,sizeof(strDevPath), "/dev/graphics/fb%d", fbNum);
+        sprintf(strDevPath,"/dev/graphics/fb%d", fbNum);
 
         mFd = open(strDevPath, O_RDWR);
         if(mFd < 0) {

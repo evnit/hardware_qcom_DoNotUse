@@ -106,14 +106,15 @@ status_t BnQService::onTransact(
         if(!permission) {
             ALOGE("display.qservice access denied: command=%d\
                   pid=%d uid=%d process=%s", code, callerPid,
-                  callerUid, callingProcName);
-            return PERMISSION_DENIED;
-        }
-        CHECK_INTERFACE(IQService, data, reply);
+                   callerUid, callingProcName);
+	    return PERMISSION_DENIED;
+	}
+	CHECK_INTERFACE(IQService, data, reply);
         dispatch(code, &data, reply);
         return NO_ERROR;
     } else {
         return BBinder::onTransact(code, data, reply, flags);
+
     }
 }
 
@@ -123,7 +124,7 @@ static void getProcName(int pid, char *buf, int size) {
     snprintf(buf, size, "/proc/%d/cmdline", pid);
     fd = open(buf, O_RDONLY);
     if (fd < 0) {
-        strlcpy(buf, "Unknown", size);
+        strcpy(buf, "Unknown");
     } else {
         int len = read(fd, buf, size - 1);
         buf[len] = 0;

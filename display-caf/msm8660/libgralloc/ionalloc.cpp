@@ -34,7 +34,7 @@
 #include <fcntl.h>
 #include <cutils/log.h>
 #include <errno.h>
-#include "gralloc_priv.h"
+#include <gralloc_priv.h>
 #include "ionalloc.h"
 
 using gralloc::IonAlloc;
@@ -109,6 +109,10 @@ int IonAlloc::alloc_buffer(alloc_data& data)
             ioctl(mIonFd, ION_IOC_FREE, &handle_data);
             return err;
         }
+        memset(base, 0, ionAllocData.len);
+        // Clean cache after memset
+        clean_buffer(base, data.size, data.offset, fd_data.fd,
+                     CACHE_CLEAN_AND_INVALIDATE);
     }
 
     data.base = base;
@@ -177,7 +181,7 @@ int IonAlloc::clean_buffer(void *base, size_t size, int offset, int fd, int op)
     struct ion_flush_data flush_data;
     struct ion_fd_data fd_data;
     struct ion_handle_data handle_data;
-    ion_user_handle_t handle;
+    struct ion_handle* handle;
     int err = 0;
 
     err = open_device();

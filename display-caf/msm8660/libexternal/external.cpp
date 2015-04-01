@@ -35,7 +35,6 @@
 #include "overlayUtils.h"
 #include "overlay.h"
 #include "mdp_version.h"
-#include "qd_utils.h"
 
 using namespace android;
 
@@ -43,9 +42,6 @@ namespace qhwc {
 #define MAX_SYSFS_FILE_PATH             255
 #define UNKNOWN_STRING                  "unknown"
 #define SPD_NAME_LENGTH                 16
-/* Max. resolution assignable to when downscale */
-#define SUPPORTED_DOWNSCALE_EXT_AREA    (1920*1080)
-
 
 int ExternalDisplay::configure() {
     if(!openFrameBuffer()) {
@@ -176,7 +172,6 @@ void ExternalDisplay::readCEUnderscanInfo()
     int len = -1;
     char scanInfo[17];
     char *ce_info_str = NULL;
-    char *save_ptr;
     const char token[] = ", \n";
     int ce_info = -1;
     char sysFsScanInfoFilePath[MAX_SYSFS_FILE_PATH];
@@ -212,13 +207,13 @@ void ExternalDisplay::readCEUnderscanInfo()
      */
 
     /* PT */
-    ce_info_str = strtok_r(scanInfo, token, &save_ptr);
+    ce_info_str = strtok(scanInfo, token);
     if (ce_info_str) {
         /* IT */
-        ce_info_str = strtok_r(NULL, token, &save_ptr);
+        ce_info_str = strtok(NULL, token);
         if (ce_info_str) {
             /* CE */
-            ce_info_str = strtok_r(NULL, token, &save_ptr);
+            ce_info_str = strtok(NULL, token);
             if (ce_info_str)
                 ce_info = atoi(ce_info_str);
         }
@@ -402,34 +397,32 @@ int ExternalDisplay::getModeOrder(int mode)
             return 9; // 576p 4:3
         case HDMI_VFRMT_720x576p50_16_9:
             return 10; // 576p 16:9
-        case HDMI_VFRMT_1024x768p60_4_3:
-            return 11; // 768p 4:3 Vesa format
         case HDMI_VFRMT_1280x1024p60_5_4:
-            return 12; // 1024p Vesa format
+            return 11; // 1024p; Vesa format
         case HDMI_VFRMT_1280x720p50_16_9:
-            return 13; // 720p@50Hz
+            return 12; // 720p@50Hz
         case HDMI_VFRMT_1280x720p60_16_9:
-            return 14; // 720p@60Hz
+            return 13; // 720p@60Hz
         case HDMI_VFRMT_1920x1080p24_16_9:
-            return 15; //1080p@24Hz
+            return 14; //1080p@24Hz
         case HDMI_VFRMT_1920x1080p25_16_9:
-            return 16; //108-p@25Hz
+            return 15; //108-p@25Hz
         case HDMI_VFRMT_1920x1080p30_16_9:
-            return 17; //1080p@30Hz
+            return 16; //1080p@30Hz
         case HDMI_VFRMT_1920x1080p50_16_9:
-            return 18; //1080p@50Hz
+            return 17; //1080p@50Hz
         case HDMI_VFRMT_1920x1080p60_16_9:
-            return 19; //1080p@60Hz
+            return 18; //1080p@60Hz
         case HDMI_VFRMT_2560x1600p60_16_9:
-            return 20; //WQXGA@60Hz541
+            return 19; //WQXGA@60Hz541
         case HDMI_VFRMT_3840x2160p24_16_9:
-            return 21;//2160@24Hz
+            return 20;//2160@24Hz
         case HDMI_VFRMT_3840x2160p25_16_9:
-            return 22;//2160@25Hz
+            return 21;//2160@25Hz
         case HDMI_VFRMT_3840x2160p30_16_9:
-            return 23; //2160@30Hz
+            return 22; //2160@30Hz
         case HDMI_VFRMT_4096x2160p24_16_9:
-            return 24; //4kx2k@24Hz
+            return 23; //4kx2k@24Hz
     }
 }
 
@@ -485,10 +478,8 @@ bool ExternalDisplay::isInterlacedMode(int ID) {
         case HDMI_VFRMT_1440x576i50_16_9:
         case HDMI_VFRMT_1920x1080i60_16_9:
             interlaced = true;
-            break;
         default:
             interlaced = false;
-            break;
     }
     return interlaced;
 }
@@ -553,11 +544,11 @@ bool ExternalDisplay::writeHPDOption(int userOption) const
     if(mFbNum != -1) {
         char sysFsHPDFilePath[MAX_SYSFS_FILE_PATH];
         snprintf(sysFsHPDFilePath ,sizeof(sysFsHPDFilePath),
-                 "/sys/devices/virtual/graphics/fb%d/hpd", mFbNum);
+                "/sys/devices/virtual/graphics/fb%d/hpd", mFbNum);
         int hdmiHPDFile = open(sysFsHPDFilePath,O_RDWR, 0);
         if (hdmiHPDFile < 0) {
             ALOGE("%s: state file '%s' not found : ret%d err str: %s",
-                  __FUNCTION__, sysFsHPDFilePath, hdmiHPDFile, strerror(errno));
+                    __FUNCTION__, sysFsHPDFilePath, hdmiHPDFile, strerror(errno));
             ret = false;
         } else {
             int err = -1;
@@ -568,7 +559,7 @@ bool ExternalDisplay::writeHPDOption(int userOption) const
                 err = write(hdmiHPDFile, "0" , 2);
             if (err <= 0) {
                 ALOGE("%s: file write failed '%s'", __FUNCTION__,
-                      sysFsHPDFilePath);
+                        sysFsHPDFilePath);
                 ret = false;
             }
             close(hdmiHPDFile);
@@ -592,37 +583,24 @@ void ExternalDisplay::setAttributes() {
         //and update this accordingly
         mHwcContext->dpyAttr[HWC_DISPLAY_EXTERNAL].secure = true;
 
-        if(!qdutils::MDPVersion::getInstance().is8x26()
-                && mHwcContext->mMDPDownscaleEnabled) {
-            int priW = mHwcContext->dpyAttr[HWC_DISPLAY_PRIMARY].xres;
-            int priH = mHwcContext->dpyAttr[HWC_DISPLAY_PRIMARY].yres;
-            // if primary resolution is more than the hdmi resolution
-            // configure dpy attr to primary resolution and set
-            // downscale mode
-            // Restrict this upto 1080p resolution max
-            if(((priW * priH) > (width * height)) &&
-               ((priW * priH) <= SUPPORTED_DOWNSCALE_EXT_AREA)) {
-                // tmpW and tmpH will hold the primary dimensions before we
-                // update the aspect ratio if necessary.
-                int tmpW = priW;
-                int tmpH = priH;
+        int priW = mHwcContext->dpyAttr[HWC_DISPLAY_PRIMARY].xres;
+        int priH = mHwcContext->dpyAttr[HWC_DISPLAY_PRIMARY].yres;
+        // if primary resolution is more than HDMI resolution and
+        // downscale_factor is zero(which corresponds to downscale
+        // to > 50% of orig),then configure dpy attr to primary
+        // resolution and set downscale mode.
+        if(((priW * priH) > (width * height)) &&
+            (priW <= MAX_DISPLAY_DIM )) {
+            int downscale_factor = overlay::utils::getDownscaleFactor(priW, priH, width, height);
+            if(!downscale_factor) {
+                mHwcContext->dpyAttr[HWC_DISPLAY_EXTERNAL].xres = priW;
+                mHwcContext->dpyAttr[HWC_DISPLAY_EXTERNAL].yres = priH;
                 // HDMI is always in landscape, so always assign the higher
                 // dimension to hdmi's xres
                 if(priH > priW) {
-                    tmpW = priH;
-                    tmpH = priW;
+                    mHwcContext->dpyAttr[HWC_DISPLAY_EXTERNAL].xres = priH;
+                    mHwcContext->dpyAttr[HWC_DISPLAY_EXTERNAL].yres = priW;
                 }
-                // The aspect ratios of the external and primary displays
-                // can be different. As a result, directly assigning primary
-                // resolution could lead to an incorrect final image.
-                // We get around this by calculating a new resolution by
-                // keeping aspect ratio intact.
-                hwc_rect r = {0, 0, 0, 0};
-                getAspectRatioPosition(tmpW, tmpH, width, height, r);
-                mHwcContext->dpyAttr[HWC_DISPLAY_EXTERNAL].xres =
-                                                              r.right - r.left;
-                mHwcContext->dpyAttr[HWC_DISPLAY_EXTERNAL].yres =
-                                                              r.bottom - r.top;
                 // Set External Display MDP Downscale mode indicator
                 mHwcContext->dpyAttr[HWC_DISPLAY_EXTERNAL].mDownScaleMode =true;
             }
@@ -666,11 +644,6 @@ void ExternalDisplay::getAttrForMode(int& width, int& height, int& fps) {
             height = 1024;
             fps = 60;
             break;
-        case HDMI_VFRMT_1024x768p60_4_3:
-            width = 1024;
-            height = 768;
-            fps = 60;
-            break;
         case HDMI_VFRMT_1920x1080p24_16_9:
             width = 1920;
             height = 1080;
@@ -705,11 +678,6 @@ void ExternalDisplay::getAttrForMode(int& width, int& height, int& fps) {
             width = 3840;
             height = 2160;
             fps = 24;
-            break;
-        case HDMI_VFRMT_3840x2160p25_16_9:
-            width = 3840;
-            height = 2160;
-            fps = 25;
             break;
         case HDMI_VFRMT_3840x2160p30_16_9:
             width = 3840;

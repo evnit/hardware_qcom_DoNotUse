@@ -1,7 +1,6 @@
 /*
  * Copyright (c) 2013, The Linux Foundation. All rights reserved.
- * Not a Contribution, Apache license notifications and license are retained
- * for attribution purposes only.
+ * Not a Contribution.
  *
  * Copyright (C) 2010 The Android Open Source Project
  *
@@ -29,7 +28,6 @@
 #include <media/stagefright/SkipCutBuffer.h>
 #include <OMX_Audio.h>
 #include <OMX_Component.h>
-#include <OMX_IVCommon.h>
 
 #define TRACK_BUFFER_TIMING     0
 
@@ -56,7 +54,7 @@ struct DashCodec : public AHierarchicalStateMachine, public CodecBase {
     virtual void signalFlush();
     virtual void signalResume();
 
-    virtual void signalSetParameters(const sp<AMessage> & /*msg*/) {
+    virtual void signalSetParameters(const sp<AMessage> &msg) {
       return;
     }
     virtual void signalEndOfInputStream() {
@@ -120,7 +118,6 @@ private:
         kWhatConfigureComponent      = 'conf',
         kWhatStart                   = 'star',
         kWhatRequestIDRFrame         = 'ridr',
-        kWhatWaitForPortEnable       = 'wfpe',
     };
 
     enum {
@@ -130,8 +127,7 @@ private:
 
     enum {
         kFlagIsSecure   = 1,
-        kFlagIsSecureOPOnly = 2,
-        kFlagPushBlankBuffersToNativeWindowOnShutdown = 4
+        kFlagIsSecureOPOnly = 2
     };
 
     struct BufferInfo {
@@ -145,7 +141,6 @@ private:
 
         IOMX::buffer_id mBufferID;
         Status mStatus;
-        unsigned mDequeuedAt;
 
         sp<ABuffer> mData;
         sp<GraphicBuffer> mGraphicBuffer;
@@ -204,22 +199,11 @@ private:
 
     bool mChannelMaskPresent;
     int32_t mChannelMask;
-    unsigned mDequeueCounter;
-    bool mStoreMetaDataInOutputBuffers;
-    int32_t mMetaDataBuffersToSubmit;
-
-    int32_t mCurrentWidth;
-    int32_t mCurrentHeight;
 
     status_t allocateBuffersOnPort(OMX_U32 portIndex);
     status_t freeBuffersOnPort(OMX_U32 portIndex);
     status_t freeBuffer(OMX_U32 portIndex, size_t i);
 
-    status_t configureOutputBuffersFromNativeWindow(
-            OMX_U32 *nBufferCount, OMX_U32 *nBufferSize,
-            OMX_U32 *nMinUndequeuedBuffers);
-    status_t allocateOutputMetaDataBuffers();
-    status_t submitOutputMetaDataBuffer();
     status_t allocateOutputBuffersFromNativeWindow();
     status_t cancelBufferToNativeWindow(BufferInfo *info);
     status_t freeOutputBuffersNotOwnedByComponent();
@@ -282,15 +266,14 @@ private:
 
     status_t initNativeWindow();
 
+    status_t pushBlankBuffersToNativeWindow();
+
     // Returns true iff all buffers on the given port have status OWNED_BY_US.
     bool allYourBuffersAreBelongToUs(OMX_U32 portIndex);
 
     bool allYourBuffersAreBelongToUs();
 
-    void waitUntilAllPossibleNativeWindowBuffersAreReturnedToUs();
-
     size_t countBuffersOwnedByComponent(OMX_U32 portIndex) const;
-    size_t countBuffersOwnedByNativeWindow() const;
 
     void deferMessage(const sp<AMessage> &msg);
     void processDeferredMessages();

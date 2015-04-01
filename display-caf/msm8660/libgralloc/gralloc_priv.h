@@ -75,8 +75,11 @@ enum {
     */
     GRALLOC_MODULE_PERFORM_CREATE_HANDLE_FROM_BUFFER = 1,
     GRALLOC_MODULE_PERFORM_GET_STRIDE,
+#ifdef HAVE_NEW_GRALLOC
     GRALLOC_MODULE_PERFORM_GET_CUSTOM_STRIDE_AND_HEIGHT_FROM_HANDLE,
-    GRALLOC_MODULE_PERFORM_GET_YUV_PLANE_INFO,
+#else
+    GRALLOC_MODULE_PERFORM_GET_CUSTOM_STRIDE_FROM_HANDLE,
+#endif
 };
 
 #define GRALLOC_HEAP_MASK   (GRALLOC_USAGE_PRIVATE_UI_CONTIG_HEAP |\
@@ -101,14 +104,9 @@ enum {
     HAL_PIXEL_FORMAT_YCbCr_444_SP           = 0x10F,
     HAL_PIXEL_FORMAT_YCrCb_444_SP           = 0x110,
     HAL_PIXEL_FORMAT_YCrCb_422_I            = 0x111,
-    HAL_PIXEL_FORMAT_BGRX_8888              = 0x112,
-    HAL_PIXEL_FORMAT_NV21_ZSL               = 0x113,
+    HAL_PIXEL_FORMAT_NV21_ZSL               = 0x112,
     HAL_PIXEL_FORMAT_INTERLACE              = 0x180,
-    //v4l2_fourcc('Y', 'U', 'Y', 'L'). 24 bpp YUYV 4:2:2 10 bit per component
-    HAL_PIXEL_FORMAT_YCbCr_422_I_10BIT      = 0x4C595559,
-    //v4l2_fourcc('Y', 'B', 'W', 'C'). 10 bit per component. This compressed
-    //format reduces the memory access bandwidth
-    HAL_PIXEL_FORMAT_YCbCr_422_I_10BIT_COMPRESSED = 0x43574259,
+
 };
 
 /* possible formats for 3D content*/
@@ -144,9 +142,11 @@ struct private_handle_t : public native_handle {
             PRIV_FLAGS_USES_ION           = 0x00000008,
             PRIV_FLAGS_USES_ASHMEM        = 0x00000010,
             PRIV_FLAGS_NEEDS_FLUSH        = 0x00000020,
-            PRIV_FLAGS_NON_CPU_WRITER     = 0x00000080,
+            PRIV_FLAGS_DO_NOT_FLUSH       = 0x00000040,
+            PRIV_FLAGS_SW_LOCK            = 0x00000080,
             PRIV_FLAGS_NONCONTIGUOUS_MEM  = 0x00000100,
-            PRIV_FLAGS_CACHED             = 0x00000200,
+            // Set by HWC when storing the handle
+            PRIV_FLAGS_HWC_LOCK           = 0x00000200,
             PRIV_FLAGS_SECURE_BUFFER      = 0x00000400,
             // For explicit synchronization
             PRIV_FLAGS_UNSYNCHRONIZED     = 0x00000800,
@@ -154,8 +154,6 @@ struct private_handle_t : public native_handle {
             PRIV_FLAGS_NOT_MAPPED         = 0x00001000,
             // Display on external only
             PRIV_FLAGS_EXTERNAL_ONLY      = 0x00002000,
-            // Set by HWC for protected non secure buffers
-            PRIV_FLAGS_PROTECTED_BUFFER   = 0x00004000,
             PRIV_FLAGS_VIDEO_ENCODER      = 0x00010000,
             PRIV_FLAGS_CAMERA_WRITE       = 0x00020000,
             PRIV_FLAGS_CAMERA_READ        = 0x00040000,
@@ -173,9 +171,14 @@ struct private_handle_t : public native_handle {
         // ints
         int     magic;
         int     flags;
+#ifdef QCOM_BSP_CAMERA_ABI_HACK
+        int     bufferType;
+#endif
         int     size;
         int     offset;
+#ifndef QCOM_BSP_CAMERA_ABI_HACK
         int     bufferType;
+#endif
         int     base;
         int     offset_metadata;
         // The gpu address mapped into the mmu.
@@ -194,7 +197,14 @@ struct private_handle_t : public native_handle {
                          int format,int width, int height, int eFd = -1,
                          int eOffset = 0, int eBase = 0) :
             fd(fd), fd_metadata(eFd), magic(sMagic),
-            flags(flags), size(size), offset(0), bufferType(bufferType),
+            flags(flags),
+#ifdef QCOM_BSP_CAMERA_ABI_HACK
+            bufferType(bufferType),
+#endif
+            size(size), offset(0),
+#ifndef QCOM_BSP_CAMERA_ABI_HACK
+            bufferType(bufferType),
+#endif
             base(0), offset_metadata(eOffset), gpuaddr(0),
             format(format), width(width), height(height),
             base_metadata(eBase)

@@ -15,60 +15,54 @@
 * limitations under the License.
 */
 
-#include <math.h>
 #include <mdp_version.h>
 #include "overlayUtils.h"
 #include "overlayMdp.h"
 #include "mdp_version.h"
-#include <overlay.h>
-
-#ifdef USES_QSEED_SCALAR
-#include <scale/scale.h>
-using namespace scale;
-#endif
 
 #define HSIC_SETTINGS_DEBUG 0
-
-using namespace qdutils;
 
 static inline bool isEqual(float f1, float f2) {
         return ((int)(f1*100) == (int)(f2*100)) ? true : false;
 }
 
-#ifdef ANDROID_JELLYBEAN_MR1
-//Since this is unavailable on Android 4.2.2, defining it in terms of base 10
-static inline float log2f(const float& x) {
-    return log(x) / log(2);
-}
-#endif
-
 namespace ovutils = overlay::utils;
 namespace overlay {
 
-bool MdpCtrl::init(const int& dpy) {
-    int fbnum = Overlay::getFbForDpy(dpy);
-    if( fbnum < 0 ) {
-        ALOGE("%s: Invalid FB for the display: %d",__FUNCTION__, dpy);
-        return false;
+//Helper to even out x,w and y,h pairs
+//x,y are always evened to ceil and w,h are evened to floor
+static void normalizeCrop(uint32_t& xy, uint32_t& wh) {
+    if(xy & 1) {
+        utils::even_ceil(xy);
+        if(wh & 1)
+            utils::even_floor(wh);
+        else
+            wh -= 2;
+    } else {
+        utils::even_floor(wh);
     }
+}
 
+bool MdpCtrl::init(uint32_t fbnum) {
     // FD init
     if(!utils::openDev(mFd, fbnum,
                 Res::fbPath, O_RDWR)){
         ALOGE("Ctrl failed to init fbnum=%d", fbnum);
         return false;
     }
-    mDpy = dpy;
     return true;
 }
 
 void MdpCtrl::reset() {
     utils::memset0(mOVInfo);
+    utils::memset0(mLkgo);
     mOVInfo.id = MSMFB_NEW_REQUEST;
+    mLkgo.id = MSMFB_NEW_REQUEST;
     mOrientation = utils::OVERLAY_TRANSFORM_0;
     mDownscale = 0;
-    mDpy = 0;
+    mForceSet = false;
 #ifdef USES_POST_PROCESSING
+    mPPChanged = false;
     memset(&mParams, 0, sizeof(struct compute_params));
     mParams.params.conv_params.order = hsic_order_hsc_i;
     mParams.params.conv_params.interface = interface_rec601;
@@ -118,10 +112,6 @@ void MdpCtrl::setCrop(const utils::Dim& d) {
     setSrcRectDim(d);
 }
 
-void MdpCtrl::setColor(const uint32_t color) {
-    mOVInfo.bg_color = color;
-}
-
 void MdpCtrl::setPosition(const overlay::utils::Dim& d) {
     setDstRectDim(d);
 }
@@ -129,24 +119,9 @@ void MdpCtrl::setPosition(const overlay::utils::Dim& d) {
 void MdpCtrl::setTransform(const utils::eTransform& orient) {
     int rot = utils::getMdpOrient(orient);
     setUserData(rot);
+    //getMdpOrient will switch the flips if the source is 90 rotated.
+    //Clients in Android dont factor in 90 rotation while deciding the flip.
     mOrientation = static_cast<utils::eTransform>(rot);
-}
-
-void MdpCtrl::setPipeType(const utils::eMdpPipeType& pType){
-    switch((int) pType){
-        case utils::OV_MDP_PIPE_RGB:
-            mOVInfo.pipe_type = PIPE_TYPE_RGB;
-            break;
-        case utils::OV_MDP_PIPE_VG:
-            mOVInfo.pipe_type = PIPE_TYPE_VIG;
-            break;
-        case utils::OV_MDP_PIPE_DMA:
-            mOVInfo.pipe_type = PIPE_TYPE_DMA;
-            break;
-        default:
-            mOVInfo.pipe_type = PIPE_TYPE_AUTO;
-            break;
-    }
 }
 
 void MdpCtrl::doTransform() {
@@ -159,74 +134,48 @@ void MdpCtrl::doTransform() {
 }
 
 void MdpCtrl::doDownscale() {
-    int mdpVersion = MDPVersion::getInstance().getMDPVersion();
-    if(mdpVersion < MDSS_V5) {
-        mOVInfo.src_rect.x >>= mDownscale;
-        mOVInfo.src_rect.y >>= mDownscale;
-        mOVInfo.src_rect.w >>= mDownscale;
-        mOVInfo.src_rect.h >>= mDownscale;
-    } else if(MDPVersion::getInstance().supportsDecimation()) {
-        //Decimation + MDP Downscale
-        mOVInfo.horz_deci = 0;
-        mOVInfo.vert_deci = 0;
-        int minHorDeci = 0;
-        if(mOVInfo.src_rect.w > 2048) {
-            //If the client sends us something > what a layer mixer supports
-            //then it means it doesn't want to use split-pipe but wants us to
-            //decimate. A minimum decimation of 2 will ensure that the width is
-            //always within layer mixer limits.
-            minHorDeci = 2;
-        }
-
-        float horDscale = 0.0f;
-        float verDscale = 0.0f;
-
-        utils::getDecimationFactor(mOVInfo.src_rect.w, mOVInfo.src_rect.h,
-                mOVInfo.dst_rect.w, mOVInfo.dst_rect.h, horDscale, verDscale);
-
-        if(horDscale < minHorDeci)
-            horDscale = minHorDeci;
-
-        if((int)horDscale)
-            mOVInfo.horz_deci = (int)log2f(horDscale);
-
-        if((int)verDscale)
-            mOVInfo.vert_deci = (int)log2f(verDscale);
-    }
+    mOVInfo.src_rect.x >>= mDownscale;
+    mOVInfo.src_rect.y >>= mDownscale;
+    mOVInfo.src_rect.w >>= mDownscale;
+    mOVInfo.src_rect.h >>= mDownscale;
 }
 
 bool MdpCtrl::set() {
-    int mdpVersion = MDPVersion::getInstance().getMDPVersion();
     //deferred calcs, so APIs could be called in any order.
     doTransform();
+    doDownscale();
     utils::Whf whf = getSrcWhf();
     if(utils::isYuv(whf.format)) {
-        utils::normalizeCrop(mOVInfo.src_rect.x, mOVInfo.src_rect.w);
-        utils::normalizeCrop(mOVInfo.src_rect.y, mOVInfo.src_rect.h);
-        if(mdpVersion < MDSS_V5) {
-            utils::even_floor(mOVInfo.dst_rect.w);
-            utils::even_floor(mOVInfo.dst_rect.h);
-        } else if (mOVInfo.flags & MDP_DEINTERLACE) {
-            // For interlaced, crop.h should be 4-aligned
-            if (!(mOVInfo.flags & MDP_SOURCE_ROTATED_90) &&
-                (mOVInfo.src_rect.h % 4))
-                mOVInfo.src_rect.h = utils::aligndown(mOVInfo.src_rect.h, 4);
-            // For interlaced, width must be multiple of 4 when rotated 90deg.
-            else if ((mOVInfo.flags & MDP_SOURCE_ROTATED_90) &&
-                (mOVInfo.src_rect.w % 4))
-                mOVInfo.src_rect.w = utils::aligndown(mOVInfo.src_rect.w, 4);
-        }
-    } else {
-        if (mdpVersion >= MDSS_V5) {
-            // Check for 1-pixel down-scaling
-            if (mOVInfo.src_rect.w - mOVInfo.dst_rect.w == 1)
-                mOVInfo.src_rect.w -= 1;
-            if (mOVInfo.src_rect.h - mOVInfo.dst_rect.h == 1)
-                mOVInfo.src_rect.h -= 1;
-        }
+        normalizeCrop(mOVInfo.src_rect.x, mOVInfo.src_rect.w);
+        normalizeCrop(mOVInfo.src_rect.y, mOVInfo.src_rect.h);
+        utils::even_floor(mOVInfo.dst_rect.w);
+        utils::even_floor(mOVInfo.dst_rect.h);
     }
 
-    doDownscale();
+    if(this->ovChanged() || mForceSet) {
+        mForceSet = false;
+        if(!mdp_wrapper::setOverlay(mFd.getFD(), mOVInfo)) {
+            ALOGE("MdpCtrl failed to setOverlay, restoring last known "
+                  "good ov info");
+            mdp_wrapper::dump("== Bad OVInfo is: ", mOVInfo);
+            mdp_wrapper::dump("== Last good known OVInfo is: ", mLkgo);
+            this->restore();
+            return false;
+        }
+        this->save();
+    }
+
+    return true;
+}
+
+bool MdpCtrl::get() {
+    mdp_overlay ov;
+    ov.id = mOVInfo.id;
+    if (!mdp_wrapper::getOverlay(mFd.getFD(), ov)) {
+        ALOGE("MdpCtrl get failed");
+        return false;
+    }
+    mOVInfo = ov;
     return true;
 }
 
@@ -245,7 +194,7 @@ void MdpCtrl::dump() const {
 }
 
 void MdpCtrl::getDump(char *buf, size_t len) {
-    ovutils::getDump(buf, len, "Ctrl", mOVInfo);
+    ovutils::getDump(buf, len, "Ctrl(mdp_overlay)", mOVInfo);
 }
 
 void MdpData::dump() const {
@@ -256,7 +205,7 @@ void MdpData::dump() const {
 }
 
 void MdpData::getDump(char *buf, size_t len) {
-    ovutils::getDump(buf, len, "Data", mOvData);
+    ovutils::getDump(buf, len, "Data(msmfb_overlay_data)", mOvData);
 }
 
 void MdpCtrl3D::dump() const {
@@ -375,58 +324,9 @@ bool MdpCtrl::setVisualParams(const MetaData_t& data) {
 
     if (needUpdate) {
         display_pp_compute_params(&mParams, &mOVInfo.overlay_pp_cfg);
+        mPPChanged = true;
     }
 #endif
-    return true;
-}
-
-bool MdpCtrl::validateAndSet(MdpCtrl* mdpCtrlArray[], const int& count,
-        const int& fbFd) {
-    mdp_overlay* ovArray[count];
-    memset(&ovArray, 0, sizeof(ovArray));
-
-    for(int i = 0; i < count; i++) {
-        ovArray[i] = &mdpCtrlArray[i]->mOVInfo;
-    }
-
-    struct mdp_overlay_list list;
-    memset(&list, 0, sizeof(struct mdp_overlay_list));
-    list.num_overlays = count;
-    list.overlay_list = ovArray;
-
-#ifdef USES_QSEED_SCALAR
-    Scale *scalar = Overlay::getScalar();
-    if(scalar) {
-        scalar->applyScale(&list);
-    }
-#endif
-
-    if(!mdp_wrapper::validateAndSet(fbFd, list)) {
-        /* No dump for failure due to insufficient resource */
-        if(errno != E2BIG) {
-            mdp_wrapper::dump("Bad ov dump: ",
-                *list.overlay_list[list.processed_overlays]);
-        }
-        return false;
-    }
-
-    return true;
-}
-
-
-//// MdpData ////////////
-bool MdpData::init(const int& dpy) {
-    int fbnum = Overlay::getFbForDpy(dpy);
-    if( fbnum < 0 ) {
-        ALOGE("%s: Invalid FB for the display: %d",__FUNCTION__, dpy);
-        return false;
-    }
-
-    // FD init
-    if(!utils::openDev(mFd, fbnum, Res::fbPath, O_RDWR)){
-        ALOGE("Ctrl failed to init fbnum=%d", fbnum);
-        return false;
-    }
     return true;
 }
 

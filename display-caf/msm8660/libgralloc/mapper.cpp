@@ -36,7 +36,7 @@
 #include <hardware/gralloc.h>
 #include <linux/android_pmem.h>
 
-#include "gralloc_priv.h"
+#include <gralloc_priv.h>
 #include "gr.h"
 #include "alloc_controller.h"
 #include "memalloc.h"
@@ -199,7 +199,8 @@ int terminateBuffer(gralloc_module_t const* module,
 }
 
 static int gralloc_map_and_invalidate (gralloc_module_t const* module,
-                                       buffer_handle_t handle, int usage)
+                                       buffer_handle_t handle, int usage,
+                                       int l, int t, int w, int h)
 {
     if (private_handle_t::validate(handle) < 0)
         return -EINVAL;
@@ -214,36 +215,31 @@ static int gralloc_map_and_invalidate (gralloc_module_t const* module,
             err = gralloc_map(module, handle);
             pthread_mutex_unlock(lock);
         }
-        if (hnd->flags & private_handle_t::PRIV_FLAGS_USES_ION and
-                hnd->flags & private_handle_t::PRIV_FLAGS_CACHED) {
-            //Invalidate if CPU reads in software and there are non-CPU
-            //writers. No need to do this for the metadata buffer as it is
-            //only read/written in software.
-            if ((usage & GRALLOC_USAGE_SW_READ_MASK) and
-                    (hnd->flags & private_handle_t::PRIV_FLAGS_NON_CPU_WRITER))
-            {
-                IMemAlloc* memalloc = getAllocator(hnd->flags) ;
-                err = memalloc->clean_buffer((void*)hnd->base,
-                        hnd->size, hnd->offset, hnd->fd,
-                        CACHE_INVALIDATE);
-            }
-            //Mark the buffer to be flushed after CPU write.
+        if (hnd->flags & private_handle_t::PRIV_FLAGS_USES_ION) {
+            //Invalidate if reading in software. No need to do this for the
+            //metadata buffer as it is only read/written in software.
+            IMemAlloc* memalloc = getAllocator(hnd->flags) ;
+            err = memalloc->clean_buffer((void*)hnd->base,
+                                         hnd->size, hnd->offset, hnd->fd,
+                                         CACHE_INVALIDATE);
             if (usage & GRALLOC_USAGE_SW_WRITE_MASK) {
+                // Mark the buffer to be flushed after cpu read/write
                 hnd->flags |= private_handle_t::PRIV_FLAGS_NEEDS_FLUSH;
             }
         }
+    } else {
+        hnd->flags |= private_handle_t::PRIV_FLAGS_DO_NOT_FLUSH;
     }
-
     return err;
 }
 
 int gralloc_lock(gralloc_module_t const* module,
                  buffer_handle_t handle, int usage,
-                 int /*l*/, int /*t*/, int /*w*/, int /*h*/,
+                 int l, int t, int w, int h,
                  void** vaddr)
 {
     private_handle_t* hnd = (private_handle_t*)handle;
-    int err = gralloc_map_and_invalidate(module, handle, usage);
+    int err = gralloc_map_and_invalidate(module, handle, usage, l, t, w, h);
     if(!err)
         *vaddr = (void*)hnd->base;
     return err;
@@ -251,13 +247,32 @@ int gralloc_lock(gralloc_module_t const* module,
 
 int gralloc_lock_ycbcr(gralloc_module_t const* module,
                  buffer_handle_t handle, int usage,
-                 int /*l*/, int /*t*/, int /*w*/, int /*h*/,
+                 int l, int t, int w, int h,
                  struct android_ycbcr *ycbcr)
 {
     private_handle_t* hnd = (private_handle_t*)handle;
-    int err = gralloc_map_and_invalidate(module, handle, usage);
-    if(!err)
-        err = getYUVPlaneInfo(hnd, ycbcr);
+    int err = gralloc_map_and_invalidate(module, handle, usage, l, t, w, h);
+    int ystride;
+    if(!err) {
+        //hnd->format holds our implementation defined format
+        //HAL_PIXEL_FORMAT_YCrCb_420_SP is the only one set right now.
+        switch (hnd->format) {
+            case HAL_PIXEL_FORMAT_YCrCb_420_SP:
+                ystride = ALIGN(hnd->width, 16);
+                ycbcr->y  = (void*)hnd->base;
+                ycbcr->cr = (void*)(hnd->base + ystride * hnd->height);
+                ycbcr->cb = (void*)(hnd->base + ystride * hnd->height + 1);
+                ycbcr->ystride = ystride;
+                ycbcr->cstride = ystride;
+                ycbcr->chroma_step = 2;
+                memset(ycbcr->reserved, 0, sizeof(ycbcr->reserved));
+                break;
+            default:
+                ALOGD("%s: Invalid format passed: 0x%x", __FUNCTION__,
+                      hnd->format);
+                err = -EINVAL;
+        }
+    }
     return err;
 }
 
@@ -268,13 +283,23 @@ int gralloc_unlock(gralloc_module_t const* module,
         return -EINVAL;
     int err = 0;
     private_handle_t* hnd = (private_handle_t*)handle;
-
     IMemAlloc* memalloc = getAllocator(hnd->flags);
-    if (hnd->flags & private_handle_t::PRIV_FLAGS_NEEDS_FLUSH) {
-        err = memalloc->clean_buffer((void*)hnd->base,
-                hnd->size, hnd->offset, hnd->fd,
-                CACHE_CLEAN);
-        hnd->flags &= ~private_handle_t::PRIV_FLAGS_NEEDS_FLUSH;
+
+    if (hnd->flags & private_handle_t::PRIV_FLAGS_USES_ION) {
+        if (hnd->flags & private_handle_t::PRIV_FLAGS_NEEDS_FLUSH) {
+            err = memalloc->clean_buffer((void*)hnd->base,
+                                         hnd->size, hnd->offset, hnd->fd,
+                                         CACHE_CLEAN_AND_INVALIDATE);
+            hnd->flags &= ~private_handle_t::PRIV_FLAGS_NEEDS_FLUSH;
+        } else if(hnd->flags & private_handle_t::PRIV_FLAGS_DO_NOT_FLUSH) {
+            hnd->flags &= ~private_handle_t::PRIV_FLAGS_DO_NOT_FLUSH;
+        } else {
+            //Probably a round about way to do this, but this avoids adding new
+            //flags
+            err = memalloc->clean_buffer((void*)hnd->base,
+                                         hnd->size, hnd->offset, hnd->fd,
+                                         CACHE_INVALIDATE);
+        }
     }
 
     return err;
@@ -323,12 +348,10 @@ int gralloc_perform(struct gralloc_module_t const* module,
                 int width   = va_arg(args, int);
                 int format  = va_arg(args, int);
                 int *stride = va_arg(args, int *);
-                int alignedw = 0, alignedh = 0;
-                AdrenoMemInfo::getInstance().getAlignedWidthAndHeight(width,
-                                     0, format, alignedw, alignedh);
-                *stride = alignedw;
+                *stride = AdrenoMemInfo::getInstance().getStride(width, format);
                 res = 0;
             } break;
+#ifdef HAVE_NEW_GRALLOC
         case GRALLOC_MODULE_PERFORM_GET_CUSTOM_STRIDE_AND_HEIGHT_FROM_HANDLE:
             {
                 private_handle_t* hnd =  va_arg(args, private_handle_t*);
@@ -347,15 +370,23 @@ int gralloc_perform(struct gralloc_module_t const* module,
                 }
                 res = 0;
             } break;
-        case GRALLOC_MODULE_PERFORM_GET_YUV_PLANE_INFO:
+#else
+        case GRALLOC_MODULE_PERFORM_GET_CUSTOM_STRIDE_FROM_HANDLE:
             {
                 private_handle_t* hnd =  va_arg(args, private_handle_t*);
-                android_ycbcr* ycbcr = va_arg(args, struct android_ycbcr *);
+                int *stride = va_arg(args, int *);
                 if (private_handle_t::validate(hnd)) {
-                    res = getYUVPlaneInfo(hnd, ycbcr);
+                    return res;
                 }
+                MetaData_t *metadata = (MetaData_t *)hnd->base_metadata;
+                if(metadata && metadata->operation & UPDATE_BUFFER_GEOMETRY) {
+                    *stride = metadata->bufferDim.sliceWidth;
+                } else {
+                    *stride = hnd->width;
+                }
+                res = 0;
             } break;
-
+#endif
         default:
             break;
     }

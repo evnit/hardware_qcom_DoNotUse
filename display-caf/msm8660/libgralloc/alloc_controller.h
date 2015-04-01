@@ -65,7 +65,7 @@ class IonController : public IAllocController {
 
     private:
     IonAlloc* mIonAlloc;
-    void allocateIonMem();
+    bool mUseTZProtection;
 
 };
 } //end namespace gralloc

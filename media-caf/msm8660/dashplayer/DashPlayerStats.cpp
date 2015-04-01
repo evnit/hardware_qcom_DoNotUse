@@ -70,7 +70,6 @@ DashPlayerStats::~DashPlayerStats() {
     }
     if(mMIME) {
         delete[] mMIME;
-        mMIME = NULL;
     }
 }
 
@@ -89,8 +88,7 @@ void DashPlayerStats::setMime(const char* mime) {
     if(mime != NULL) {
         int mimeLen = strlen(mime);
         if(mMIME) {
-          delete[] mMIME;
-          mMIME = NULL;
+            delete[] mMIME;
         }
 
         mMIME = new char[mimeLen+1];
@@ -98,7 +96,7 @@ void DashPlayerStats::setMime(const char* mime) {
     }
 }
 
-void DashPlayerStats::setVeryFirstFrame(bool /*vff*/) {
+void DashPlayerStats::setVeryFirstFrame(bool vff) {
     Mutex::Autolock autoLock(mStatsLock);
     mVeryFirstFrame = true;
 }
@@ -258,7 +256,7 @@ inline void DashPlayerStats::logFirstFrame() {
     mVeryFirstFrame = false;
 }
 
-inline void DashPlayerStats::logCatchUp(int64_t ts, int64_t clock, int64_t /*delta*/) {
+inline void DashPlayerStats::logCatchUp(int64_t ts, int64_t clock, int64_t delta) {
     if (mConsecutiveFramesDropped > 0) {
         mNumTimesSyncLoss++;
         if (mMaxTimeSyncLoss < (clock - mCatchupTimeStart) && clock > 0 && ts > 0) {

@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------------
-Copyright (c) 2009-2015, The Linux Foundation. All rights reserved.
+Copyright (c) 2009-2013, The Linux Foundation. All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions are met:
@@ -87,29 +87,16 @@ struct OMX_QCOM_PARAM_MEMMAPENTRYTYPE
 #define QOMX_VIDEO_IntraRefreshRandom (OMX_VIDEO_IntraRefreshVendorStartUnused + 0)
 
 /* This error event is used for H.264 long-term reference (LTR) encoding.
- * When IL client specifies an LTR frame with its identifier via
- * OMX_QCOM_INDEX_CONFIG_VIDEO_LTRUSE to the encoder, if the specified
- * LTR frame can not be located by the encoder in its LTR list, the encoder
- * issues this error event to IL client to notify the failure of LTRUse config.
- */
-#define QOMX_ErrorLTRUseFailed        (OMX_ErrorVendorStartUnused + 1)
-
-/* This error event is used by component to notify OMX client if a new instance
- * overloads the video hardware.
- */
-#define OMX_ErrorHardwareOverload     (OMX_ErrorVendorStartUnused + 2)
-
-/* This error event is used by component to notify OMX client if video hardware
- *  is not able to start encoding/decoding for the last instance sent to it because
- * it has reached it's maximum limit of concurrent instances.
- */
-#define OMX_ErrorMaxClientsReached     (OMX_ErrorVendorStartUnused + 3)
+* When IL client specifies an LTR frame with its identifier via
+* OMX_QCOM_INDEX_CONFIG_VIDEO_LTRUSE to the encoder, if the specified
+* LTR frame can not be located by the encoder in its LTR list, the encoder
+* issues this error event to IL client to notify the failure of LTRUse config.
+*/
+#define QOMX_ErrorLTRUseFailed (OMX_ErrorVendorStartUnused + 1)
 
 #define QOMX_VIDEO_BUFFERFLAG_BFRAME 0x00100000
 
 #define QOMX_VIDEO_BUFFERFLAG_EOSEQ  0x00200000
-
-#define QOMX_VIDEO_BUFFERFLAG_MBAFF  0x00400000
 
 #define OMX_QCOM_PORTDEFN_EXTN   "OMX.QCOM.index.param.portdefn"
 /* Allowed APIs on the above Index: OMX_GetParameter() and OMX_SetParameter() */
@@ -282,12 +269,12 @@ enum OMX_QCOM_COLOR_FORMATTYPE
  *  interleaved V and U pixels. V and U pixels are sub-sampled
  *  by a factor of two both horizontally and vertically.
  */
-    QOMX_COLOR_FormatYVU420SemiPlanar = 0x7FA30C00,
-    QOMX_COLOR_FormatYVU420PackedSemiPlanar32m4ka,
+    QOMX_COLOR_FormatYVU420PackedSemiPlanar32m4ka = 0x7FA30C01,
     QOMX_COLOR_FormatYUV420PackedSemiPlanar16m2ka,
     QOMX_COLOR_FormatYUV420PackedSemiPlanar64x32Tile2m8ka,
+    QOMX_COLOR_FormatYUV420PackedSemiPlanar32m4ka_nv21,
+    QOMX_COLOR_FormatYUV420PackedSemiPlanar16m2ka_nv21,
     QOMX_COLOR_FORMATYUV420PackedSemiPlanar32m,
-    QOMX_COLOR_FORMATYUV420PackedSemiPlanar32mMultiView,
     QOMX_COLOR_FormatAndroidOpaque = (OMX_COLOR_FORMATTYPE) OMX_COLOR_FormatVendorStartUnused  + 0x789,
 };
 
@@ -301,10 +288,9 @@ enum OMX_QCOM_VIDEO_CODINGTYPE
     QOMX_VIDEO_CodingDivx = 0x7FA30C02,     /**< Value when coding is Divx */
     QOMX_VIDEO_CodingSpark = 0x7FA30C03,     /**< Value when coding is Sorenson Spark */
     QOMX_VIDEO_CodingVp = 0x7FA30C04,
-    QOMX_VIDEO_CodingVp8 = OMX_VIDEO_CodingVP8,   /**< keeping old enum for backwards compatibility*/
-    QOMX_VIDEO_CodingHevc = OMX_VIDEO_CodingHEVC, /**< keeping old enum for backwards compatibility*/
+    QOMX_VIDEO_CodingVp8 = 0x7FA30C05,
+    QOMX_VIDEO_CodingHevc = 0x7FA30C06
 };
-#define OMX_VIDEO_CodingVPX OMX_VIDEO_CodingVP8   /**< keeping old enum for backwards compatibility*/
 
 enum OMX_QCOM_EXTN_INDEXTYPE
 {
@@ -358,7 +344,6 @@ enum OMX_QCOM_EXTN_INDEXTYPE
 
     OMX_QcomIndexParamVideoDecoderPictureOrder = 0x7F000010,
 
-    /* "OMX.QCOM.index.config.video.FramePackingInfo" */
     OMX_QcomIndexConfigVideoFramePackingArrangement = 0x7F000011,
 
     OMX_QcomIndexParamConcealMBMapExtraData = 0x7F000012,
@@ -384,7 +369,7 @@ enum OMX_QCOM_EXTN_INDEXTYPE
     OMX_QcomIndexParamEnableTimeStampReorder = 0x7F00001B,
 
     /*"OMX.google.android.index.storeMetaDataInBuffers"*/
-    OMX_QcomIndexParamVideoMetaBufferMode = 0x7F00001C,
+    OMX_QcomIndexParamVideoEncodeMetaBufferMode = 0x7F00001C,
 
     /*"OMX.google.android.index.useAndroidNativeBuffer2"*/
     OMX_GoogleAndroidIndexUseAndroidNativeBuffer2 = 0x7F00001D,
@@ -394,112 +379,44 @@ enum OMX_QCOM_EXTN_INDEXTYPE
 
     OMX_QcomIndexEnableSliceDeliveryMode = 0x7F00001F,
 
-    /* "OMX.QCOM.index.param.video.ExtnUserExtraData" */
-    OMX_QcomIndexEnableExtnUserData = 0x7F000020,
+    OMX_QcomIndexParamSequenceHeaderWithIDR = 0x7F000020,
+
+    OMX_QcomIndexEnableExtnUserData = 0x7F000021,
 
     /*"OMX.QCOM.index.param.video.EnableSmoothStreaming"*/
-    OMX_QcomIndexParamEnableSmoothStreaming = 0x7F000021,
+    OMX_QcomIndexParamEnableSmoothStreaming = 0x7F000022,
 
     /*"OMX.QCOM.index.param.video.QPRange" */
-    OMX_QcomIndexParamVideoQPRange = 0x7F000022,
+    OMX_QcomIndexParamVideoQPRange = 0x7F000023,
 
-    OMX_QcomIndexEnableH263PlusPType = 0x7F000023,
+    OMX_QcomIndexParamEnableVUIStreamRestrictFlag = 0x7F000024,
+
+    /*"OMX.QCOM.index.config.TurboMode"*/
+    OMX_QcomIndexConfigTurboMode = 0x7F000025,
+
+    /*"OMX.QCOM.index.param.video.PerformanceLevel" */
+    OMX_QcomIndexParamVideoPerformanceLevel = 0x7F000026,
 
     /*"OMX.QCOM.index.param.video.LTRCountRangeSupported"*/
-    QOMX_IndexParamVideoLTRCountRangeSupported = 0x7F000024,
+    QOMX_IndexParamVideoLTRCountRangeSupported = 0x7F000027,
 
     /*"OMX.QCOM.index.param.video.LTRMode"*/
-    QOMX_IndexParamVideoLTRMode = 0x7F000025,
+    QOMX_IndexParamVideoLTRMode = 0x7F000028,
 
     /*"OMX.QCOM.index.param.video.LTRCount"*/
-    QOMX_IndexParamVideoLTRCount = 0x7F000026,
+    QOMX_IndexParamVideoLTRCount = 0x7F000029,
 
     /*"OMX.QCOM.index.config.video.LTRPeriod"*/
-    QOMX_IndexConfigVideoLTRPeriod = 0x7F000027,
+    QOMX_IndexConfigVideoLTRPeriod = 0x7F00002A,
 
     /*"OMX.QCOM.index.config.video.LTRUse"*/
-    QOMX_IndexConfigVideoLTRUse = 0x7F000028,
+    QOMX_IndexConfigVideoLTRUse = 0x7F00002B,
 
     /*"OMX.QCOM.index.config.video.LTRMark"*/
-    QOMX_IndexConfigVideoLTRMark = 0x7F000029,
+    QOMX_IndexConfigVideoLTRMark = 0x7F00002C,
 
-    /* OMX.google.android.index.prependSPSPPSToIDRFrames */
-    OMX_QcomIndexParamSequenceHeaderWithIDR = 0x7F00002A,
-
-    OMX_QcomIndexParamH264AUDelimiter = 0x7F00002B,
-
-    OMX_QcomIndexParamVideoDownScalar = 0x7F00002C,
-
-    /* "OMX.QCOM.index.param.video.FramePackingExtradata" */
-    OMX_QcomIndexParamVideoFramePackingExtradata = 0x7F00002D,
-
-    /* google smooth-streaming support */
-    OMX_QcomIndexParamVideoAdaptivePlaybackMode = 0x7F00002E,
-
-    /* "OMX.QCOM.index.param.video.QPExtradata" */
-    OMX_QcomIndexParamVideoQPExtraData = 0x7F00002F,
-
-    /* "OMX.QCOM.index.param.video.InputBitsInfoExtradata" */
-    OMX_QcomIndexParamVideoInputBitsInfoExtraData = 0x7F000030,
-
-    /* VP8 Hierarchical P support */
-    OMX_QcomIndexHierarchicalStructure = 0x7F000031,
-
-    /*"OMX.QCOM.index.param.video.LTRCount"*/
-    OMX_QcomIndexParamVideoLTRCount = QOMX_IndexParamVideoLTRCount,
-
-    /*"OMX.QCOM.index.config.video.LTRUse"*/
-    OMX_QcomIndexConfigVideoLTRUse = QOMX_IndexConfigVideoLTRUse,
-
-    /*"OMX.QCOM.index.config.video.LTRMark"*/
-    OMX_QcomIndexConfigVideoLTRMark = QOMX_IndexConfigVideoLTRMark,
-
-    OMX_QcomIndexParamPerfLevel = 0x7F000032,
-
-    OMX_QcomIndexParamH264VUITimingInfo = 0x7F000033,
-
-    OMX_QcomIndexParamPeakBitrate = 0x7F000034,
-
-    /* Enable InitialQP index */
-    QOMX_IndexParamVideoInitialQp = 0x7F000035,
-
-    /*"OMX.QCOM.index.param.video.CustomBufferSize"*/
-    OMX_QcomIndexParamVideoCustomBufferSize = 0x7F00003E,
-
-    OMX_QcomIndexFlexibleYUVDescription = 0x7F000044,
+    OMX_GoogleAndroidIndexPrepareForAdaptivePlayback = 0x7F00002D,
 };
-
-/**
- * Initial QP parameter.  This structure is used to enable
- * vendor specific extension to let client enable setting
- * initial QP values to I P B Frames
- *
- * STRUCT MEMBERS:
- *  nSize              : Size of Structure in bytes
- *  nVersion           : OpenMAX IL specification version information
- *  nPortIndex         : Index of the port to which this structure applies
- *  OMX_U32 nQpI       : First Iframe QP
- *  OMX_U32 nQpP       : First Pframe QP
- *  OMX_U32 nQpB       : First Bframe QP
- *  OMX_U32 bEnableInitQp : Bit field indicating which frame type(s) shall
- *                             use the specified initial QP.
- *                          Bit 0: Enable initial QP for I/IDR
- *                                 and use value specified in nInitQpI
- *                          Bit 1: Enable initial QP for P
- *                                 and use value specified in nInitQpP
- *                          Bit 2: Enable initial QP for B
- *                                 and use value specified in nInitQpB
- */
-
-typedef struct QOMX_EXTNINDEX_VIDEO_INITIALQP {
-    OMX_U32 nSize;
-    OMX_VERSIONTYPE nVersion;
-    OMX_U32 nPortIndex;
-    OMX_U32 nQpI;
-    OMX_U32 nQpP;
-    OMX_U32 nQpB;
-    OMX_U32 bEnableInitQp;
-} QOMX_EXTNINDEX_VIDEO_INITIALQP;
 
 /**
  * Extension index parameter.  This structure is used to enable
@@ -528,18 +445,18 @@ typedef struct QOMX_EXTNINDEX_PARAMTYPE {
 } QOMX_EXTNINDEX_PARAMTYPE;
 
 /**
- * Range index parameter.  This structure is used to enable
- * vendor specific extension on input/output port and
- * to pass the required minimum and maximum values
- *
- * STRUCT MEMBERS:
- *  nSize              : Size of Structure in bytes
- *  nVersion           : OpenMAX IL specification version information
- *  nPortIndex         : Index of the port to which this structure applies
- *  nMin               : Minimum value
- *  nMax               : Maximum value
- *  nSteSize           : Step size
- */
+* Range index parameter. This structure is used to enable
+* vendor specific extension on input/output port and
+* to pass the required minimum and maximum values
+*
+* STRUCT MEMBERS:
+* nSize : Size of Structure in bytes
+* nVersion : OpenMAX IL specification version information
+* nPortIndex : Index of the port to which this structure applies
+* nMin : Minimum value
+* nMax : Maximum value
+* nSteSize : Step size
+*/
 typedef struct QOMX_EXTNINDEX_RANGETYPE {
     OMX_U32 nSize;
     OMX_VERSIONTYPE nVersion;
@@ -550,37 +467,37 @@ typedef struct QOMX_EXTNINDEX_RANGETYPE {
 } QOMX_EXTNINDEX_RANGETYPE;
 
 /**
- *   Specifies LTR mode types.
- */
+* Specifies LTR mode types.
+*/
 typedef enum QOMX_VIDEO_LTRMODETYPE
 {
-    QOMX_VIDEO_LTRMode_Disable    = 0x0, /**< LTR encoding is disabled */
-    QOMX_VIDEO_LTRMode_Manual     = 0x1, /**< In this mode, IL client configures
-                                           **  the encoder the LTR count and manually
-                                           **  controls the marking and use of LTR
-                                           **  frames during video encoding.
-                                           */
-    QOMX_VIDEO_LTRMode_Auto       = 0x2, /**< In this mode, IL client configures
-                                           **  the encoder the LTR count and LTR
-                                           **  period. The encoder marks LTR frames
-                                           **  automatically based on the LTR period
-                                           **  during video encoding. IL client controls
-                                           **  the use of LTR frames.
-                                           */
-    QOMX_VIDEO_LTRMode_MAX    = 0x7FFFFFFF /** Maximum LTR Mode type */
+    QOMX_VIDEO_LTRMode_Disable = 0x0, /**< LTR encoding is disabled */
+    QOMX_VIDEO_LTRMode_Manual  = 0x1, /**< In this mode, IL client configures
+                                       ** the encoder the LTR count and manually
+                                       ** controls the marking and use of LTR
+                                       ** frames during video encoding.
+                                       */
+    QOMX_VIDEO_LTRMode_Auto    = 0x2, /**< In this mode, IL client configures
+                                       ** the encoder the LTR count and LTR
+                                       ** period. The encoder marks LTR frames
+                                       ** automatically based on the LTR period
+                                       ** during video encoding. IL client controls
+                                       ** the use of LTR frames.
+                                       */
+    QOMX_VIDEO_LTRMode_MAX = 0x7FFFFFFF /** Maximum LTR Mode type */
 } QOMX_VIDEO_LTRMODETYPE;
 
 /**
- * LTR mode index parameter.  This structure is used
- * to enable vendor specific extension on output port
- * to pass the LTR mode information.
- *
- * STRUCT MEMBERS:
- *  nSize              : Size of Structure in bytes
- *  nVersion           : OpenMAX IL specification version information
- *  nPortIndex         : Index of the port to which this structure applies
- *  eLTRMode           : Specifies the LTR mode used in encoder
- */
+* LTR mode index parameter. This structure is used
+* to enable vendor specific extension on output port
+* to pass the LTR mode information.
+*
+* STRUCT MEMBERS:
+* nSize : Size of Structure in bytes
+* nVersion : OpenMAX IL specification version information
+* nPortIndex : Index of the port to which this structure applies
+* eLTRMode : Specifies the LTR mode used in encoder
+*/
 typedef struct QOMX_VIDEO_PARAM_LTRMODE_TYPE {
     OMX_U32 nSize;
     OMX_VERSIONTYPE nVersion;
@@ -589,17 +506,17 @@ typedef struct QOMX_VIDEO_PARAM_LTRMODE_TYPE {
 } QOMX_VIDEO_PARAM_LTRMODE_TYPE;
 
 /**
- * LTR count index parameter.  This structure is used
- * to enable vendor specific extension on output port
- * to pass the LTR count information.
- *
- * STRUCT MEMBERS:
- *  nSize              : Size of Structure in bytes
- *  nVersion           : OpenMAX IL specification version information
- *  nPortIndex         : Index of the port to which this structure applies
- *  nCount             : Specifies the number of LTR frames stored in the
- *                       encoder component
- */
+* LTR count index parameter. This structure is used
+* to enable vendor specific extension on output port
+* to pass the LTR count information.
+*
+* STRUCT MEMBERS:
+* nSize : Size of Structure in bytes
+* nVersion : OpenMAX IL specification version information
+* nPortIndex : Index of the port to which this structure applies
+* nCount : Specifies the number of LTR frames stored in the
+* encoder component
+*/
 typedef struct QOMX_VIDEO_PARAM_LTRCOUNT_TYPE {
     OMX_U32 nSize;
     OMX_VERSIONTYPE nVersion;
@@ -607,24 +524,18 @@ typedef struct QOMX_VIDEO_PARAM_LTRCOUNT_TYPE {
     OMX_U32 nCount;
 } QOMX_VIDEO_PARAM_LTRCOUNT_TYPE;
 
-
 /**
- * This should be used with OMX_QcomIndexParamVideoLTRCount extension.
- */
-typedef QOMX_VIDEO_PARAM_LTRCOUNT_TYPE OMX_QCOM_VIDEO_PARAM_LTRCOUNT_TYPE;
-
-/**
- * LTR period index parameter.  This structure is used
- * to enable vendor specific extension on output port
- * to pass the LTR period information.
- *
- * STRUCT MEMBERS:
- *  nSize              : Size of Structure in bytes
- *  nVersion           : OpenMAX IL specification version information
- *  nPortIndex         : Index of the port to which this structure applies
- *  nFrames            : Specifies the number of frames between two consecutive
- *                       LTR frames.
- */
+* LTR period index parameter. This structure is used
+* to enable vendor specific extension on output port
+* to pass the LTR period information.
+*
+* STRUCT MEMBERS:
+* nSize : Size of Structure in bytes
+* nVersion : OpenMAX IL specification version information
+* nPortIndex : Index of the port to which this structure applies
+* nFrames : Specifies the number of frames between two consecutive
+* LTR frames.
+*/
 typedef struct QOMX_VIDEO_CONFIG_LTRPERIOD_TYPE {
     OMX_U32 nSize;
     OMX_VERSIONTYPE nVersion;
@@ -633,41 +544,33 @@ typedef struct QOMX_VIDEO_CONFIG_LTRPERIOD_TYPE {
 } QOMX_VIDEO_CONFIG_LTRPERIOD_TYPE;
 
 /**
- * Marks the next encoded frame as an LTR frame.
- * STRUCT MEMBERS:
- *  nSize              : Size of Structure in bytes
- *  nVersion           : OpenMAX IL specification version information
- *  nPortIndex         : Index of the port to which this structure applies
- *  nID                : Specifies the identifier of the LTR frame to be marked
- *                       as reference frame for encoding subsequent frames.
- */
+* Marks the next encoded frame as an LTR frame.
+* STRUCT MEMBERS:
+* nSize : Size of Structure in bytes
+* nVersion : OpenMAX IL specification version information
+* nPortIndex : Index of the port to which this structure applies
+*/
 typedef struct QOMX_VIDEO_CONFIG_LTRMARK_TYPE {
     OMX_U32 nSize;
     OMX_VERSIONTYPE nVersion;
     OMX_U32 nPortIndex;
-    OMX_U32 nID;
 } QOMX_VIDEO_CONFIG_LTRMARK_TYPE;
 
 /**
- * This should be used with OMX_QcomIndexConfigVideoLTRMark extension.
- */
-typedef QOMX_VIDEO_CONFIG_LTRMARK_TYPE OMX_QCOM_VIDEO_CONFIG_LTRMARK_TYPE;
-
-/**
- * Specifies an LTR frame to encode subsequent frames.
- * STRUCT MEMBERS:
- *  nSize              : Size of Structure in bytes
- *  nVersion           : OpenMAX IL specification version information
- *  nPortIndex         : Index of the port to which this structure applies
- *  nID                : Specifies the identifier of the LTR frame to be used
-                         as reference frame for encoding subsequent frames.
- *  nFrames            : Specifies the number of subsequent frames to be
-                         encoded using the LTR frame with its identifier
-                         nID as reference frame. Short-term reference frames
-                         will be used thereafter. The value of 0xFFFFFFFF
-                         indicates that all subsequent frames will be
-                         encodedusing this LTR frame as reference frame.
- */
+* Specifies an LTR frame to encode subsequent frames.
+* STRUCT MEMBERS:
+* nSize : Size of Structure in bytes
+* nVersion : OpenMAX IL specification version information
+* nPortIndex : Index of the port to which this structure applies
+* nID : Specifies the identifier of the LTR frame to be used
+* as reference frame for encoding subsequent frames.
+* nFrames : Specifies the number of subsequent frames to be
+* encoded using the LTR frame with its identifier
+* nID as reference frame. Short-term reference frames
+* will be used thereafter. The value of 0xFFFFFFFF
+* indicates that all subsequent frames will be
+* encodedusing this LTR frame as reference frame.
+*/
 typedef struct QOMX_VIDEO_CONFIG_LTRUSE_TYPE {
     OMX_U32 nSize;
     OMX_VERSIONTYPE nVersion;
@@ -675,11 +578,6 @@ typedef struct QOMX_VIDEO_CONFIG_LTRUSE_TYPE {
     OMX_U32 nID;
     OMX_U32 nFrames;
 } QOMX_VIDEO_CONFIG_LTRUSE_TYPE;
-
-/**
- * This should be used with OMX_QcomIndexConfigVideoLTRUse extension.
- */
-typedef QOMX_VIDEO_CONFIG_LTRUSE_TYPE OMX_QCOM_VIDEO_CONFIG_LTRUSE_TYPE;
 
 /**
  * Enumeration used to define the video encoder modes
@@ -733,7 +631,7 @@ typedef struct QOMX_VIDEO_SYNTAXHDRTYPE
    OMX_U32 nSize;           /** Size of the structure in bytes */
    OMX_VERSIONTYPE nVersion;/** OMX specification version information */
    OMX_U32 nPortIndex;      /** Portindex which is extended by this structure */
-   OMX_U32 nBytes;          /** The number of bytes filled in to the buffer */
+   OMX_U32 nBytes;    	    /** The number of bytes filled in to the buffer */
    OMX_U8 data[1];          /** Buffer to store the header information */
 } QOMX_VIDEO_SYNTAXHDRTYPE;
 
@@ -764,10 +662,10 @@ typedef struct QOMX_VIDEO_INTRAPERIODTYPE
    OMX_VERSIONTYPE nVersion;/** OMX specification version information */
    OMX_U32 nPortIndex;      /** Portindex which is extended by this structure */
    OMX_U32 nIDRPeriod;      /** This specifies coding a frame as IDR after every nPFrames
-                                of intra frames. If this parameter is set to 0, only the
-                                first frame of the encode session is an IDR frame. This
-                                field is ignored for non-AVC codecs and is used only for
-                                codecs that support IDR Period */
+			        of intra frames. If this parameter is set to 0, only the
+				first frame of the encode session is an IDR frame. This
+				field is ignored for non-AVC codecs and is used only for
+				codecs that support IDR Period */
    OMX_U32 nPFrames;         /** The number of "P" frames between two "I" frames */
    OMX_U32 nBFrames;         /** The number of "B" frames between two "I" frames */
 } QOMX_VIDEO_INTRAPERIODTYPE;
@@ -817,56 +715,6 @@ typedef struct OMX_QCOM_VIDEO_CONFIG_QPRANGE
    OMX_U32 nMaxQP;          /** The number for maximum quantization parameter */
 } OMX_QCOM_VIDEO_CONFIG_QPRANGE;
 
-/**
- * This structure describes the parameters for the
- * OMX_QcomIndexParamH264AUDelimiter extension.  It enables/disables
- * the AU delimiters in the H264 stream, which is used by WFD.
- */
-typedef struct OMX_QCOM_VIDEO_CONFIG_H264_AUD
-{
-   OMX_U32 nSize;           /** Size of the structure in bytes */
-   OMX_VERSIONTYPE nVersion;/** OMX specification version information */
-   OMX_BOOL bEnable;        /** Enable/disable the setting */
-} OMX_QCOM_VIDEO_CONFIG_H264_AUD;
-
-typedef enum QOMX_VIDEO_PERF_LEVEL
-{
-    OMX_QCOM_PerfLevelNominal,
-    OMX_QCOM_PerfLevelTurbo
-} QOMX_VIDEO_PERF_LEVEL;
-
-/**
- * This structure describes the parameters corresponding
- * to OMX_QcomIndexParamPerfLevel extension. It will set
- * the performance mode specified as QOMX_VIDEO_PERF_LEVEL.
- */
-typedef struct OMX_QCOM_VIDEO_PARAM_PERF_LEVEL {
-    OMX_U32 nSize;                      /** Size of the structure in bytes */
-    OMX_VERSIONTYPE nVersion;           /** OMX specification version information */
-    QOMX_VIDEO_PERF_LEVEL ePerfLevel;   /** Performance level */
-} OMX_QCOM_VIDEO_PARAM_PERF_LEVEL;
-
-/**
- * This structure describes the parameters corresponding
- * to OMX_QcomIndexParamH264VUITimingInfo extension. It
- * will enable/disable the VUI timing info.
- */
-typedef struct OMX_QCOM_VIDEO_PARAM_VUI_TIMING_INFO {
-    OMX_U32 nSize;              /** Size of the structure in bytes */
-    OMX_VERSIONTYPE nVersion;   /** OMX specification version information */
-    OMX_BOOL bEnable;           /** Enable/disable the setting */
-} OMX_QCOM_VIDEO_PARAM_VUI_TIMING_INFO;
-
-/**
- * This structure describes the parameters corresponding
- * to OMX_QcomIndexParamPeakBitrate extension. It will
- * set the peak bitrate specified by nPeakBitrate.
- */
-typedef struct OMX_QCOM_VIDEO_PARAM_PEAK_BITRATE {
-    OMX_U32 nSize;              /** Size of the structure in bytes */
-    OMX_VERSIONTYPE nVersion;   /** OMX specification version information */
-    OMX_U32 nPeakBitrate;       /** Peak bitrate value */
-} OMX_QCOM_VIDEO_PARAM_PEAK_BITRATE;
 
 typedef struct OMX_VENDOR_EXTRADATATYPE  {
     OMX_U32 nPortIndex;
@@ -874,27 +722,11 @@ typedef struct OMX_VENDOR_EXTRADATATYPE  {
     OMX_U8  *pData;     // cdata (codec_data/extradata)
 } OMX_VENDOR_EXTRADATATYPE;
 
-/**
- * This structure describes the parameters corresponding to the
- * OMX_VENDOR_VIDEOFRAMERATE extension. This parameter can be set
- * dynamically during any state except the state invalid. This is
- * used for frame rate to be set from the application. This
- * is set on the in port.
- */
-typedef struct OMX_VENDOR_VIDEOFRAMERATE  {
-   OMX_U32 nSize;           /** Size of the structure in bytes */
-   OMX_VERSIONTYPE nVersion;/** OMX specification version information */
-   OMX_U32 nPortIndex;      /** Portindex which is extended by this structure */
-   OMX_U32 nFps;            /** Frame rate value */
-   OMX_BOOL bEnabled;       /** Flag to enable or disable client's frame rate value */
-} OMX_VENDOR_VIDEOFRAMERATE;
-
 typedef enum OMX_INDEXVENDORTYPE {
     OMX_IndexVendorFileReadInputFilename = 0xFF000001,
     OMX_IndexVendorParser3gpInputFilename = 0xFF000002,
     OMX_IndexVendorVideoExtraData = 0xFF000003,
-    OMX_IndexVendorAudioExtraData = 0xFF000004,
-    OMX_IndexVendorVideoFrameRate = 0xFF000005,
+    OMX_IndexVendorAudioExtraData = 0xFF000004
 } OMX_INDEXVENDORTYPE;
 
 typedef enum OMX_QCOM_VC1RESOLUTIONTYPE
@@ -978,22 +810,6 @@ typedef struct OMX_QCOM_FRAME_PACK_ARRANGEMENT
   OMX_U32 extension_flag;
 } OMX_QCOM_FRAME_PACK_ARRANGEMENT;
 
-typedef struct OMX_QCOM_EXTRADATA_QP
-{
-   OMX_U32        nQP;
-} OMX_QCOM_EXTRADATA_QP;
-
-typedef struct OMX_QCOM_EXTRADATA_BITS_INFO
-{
-   OMX_U32 header_bits;
-   OMX_U32 frame_bits;
-} OMX_QCOM_EXTRADATA_BITS_INFO;
-
-typedef struct OMX_QCOM_EXTRADATA_USERDATA {
-   OMX_U32 type;
-   OMX_U32 data[1];
-} OMX_QCOM_EXTRADATA_USERDATA;
-
 typedef struct OMX_QCOM_EXTRADATA_FRAMEINFO
 {
    // common frame meta data. interlace related info removed
@@ -1004,8 +820,18 @@ typedef struct OMX_QCOM_EXTRADATA_FRAMEINFO
    OMX_QCOM_DISPLAY_ASPECT_RATIO displayAspectRatio;
    OMX_U32                nConcealedMacroblocks;
    OMX_U32                nFrameRate;
-   OMX_TICKS              nTimeStamp;
 } OMX_QCOM_EXTRADATA_FRAMEINFO;
+
+/**
+* This structure describes the parameters corresponding to the
+* OMX_QCOM_QUERY_PERFORMANCE extension. This parameter can be set
+* dynamically during any state except the state invalid. This is primarily
+* used to get the number of MBs being processed per second by video module.
+*/
+typedef struct OMX_QCOM_QUERY_PERFORMANCE
+{
+   OMX_U32 performance;
+} OMX_QCOM_QUERY_PERFORMANCE;
 
 typedef struct OMX_QCOM_EXTRADATA_FRAMEDIMENSION
 {
@@ -1015,7 +841,7 @@ typedef struct OMX_QCOM_EXTRADATA_FRAMEDIMENSION
    OMX_U32   nActualWidth; /** Actual Frame Width */
    OMX_U32   nActualHeight; /** Actual Frame Height */
 
-} OMX_QCOM_EXTRADATA_FRAMEDIMENSION;
+}OMX_QCOM_EXTRADATA_FRAMEDIMENSION;
 
 typedef struct OMX_QCOM_H264EXTRADATA
 {
@@ -1035,30 +861,19 @@ typedef union OMX_QCOM_EXTRADATA_CODEC_DATA
    OMX_QCOM_VC1EXTRADATA vc1ExtraData;
 } OMX_QCOM_EXTRADATA_CODEC_DATA;
 
-typedef struct OMX_QCOM_EXTRADATA_MBINFO
-{
-   OMX_U32 nFormat;
-   OMX_U32 nDataSize;
-   OMX_U8  data[0];
-} OMX_QCOM_EXTRADATA_MBINFO;
-
 typedef enum OMX_QCOM_EXTRADATATYPE
 {
-    OMX_ExtraDataFrameInfo =               0x7F000001,
-    OMX_ExtraDataH264 =                    0x7F000002,
-    OMX_ExtraDataVC1 =                     0x7F000003,
-    OMX_ExtraDataFrameDimension =          0x7F000004,
-    OMX_ExtraDataVideoEncoderSliceInfo =   0x7F000005,
-    OMX_ExtraDataConcealMB =               0x7F000006,
-    OMX_ExtraDataInterlaceFormat =         0x7F000007,
-    OMX_ExtraDataPortDef =                 0x7F000008,
-    OMX_ExtraDataMP2ExtnData =             0x7F000009,
-    OMX_ExtraDataMP2UserData =             0x7F00000a,
-    OMX_ExtraDataVideoLTRInfo =            0x7F00000b,
-    OMX_ExtraDataFramePackingArrangement = 0x7F00000c,
-    OMX_ExtraDataQP =                      0x7F00000d,
-    OMX_ExtraDataInputBitsInfo =           0x7F00000e,
-    OMX_ExtraDataVideoEncoderMBInfo =      0x7F00000f,
+   OMX_ExtraDataFrameInfo = 0x7F000001,
+   OMX_ExtraDataH264 = 0x7F000002,
+   OMX_ExtraDataVC1 = 0x7F000003,
+   OMX_ExtraDataFrameDimension = 0x7F000004,
+   OMX_ExtraDataVideoEncoderSliceInfo = 0x7F000005,
+   OMX_ExtraDataConcealMB = 0x7F000006,
+   OMX_ExtraDataInterlaceFormat = 0x7F000007,
+   OMX_ExtraDataPortDef = 0x7F000008,
+   OMX_ExtraDataMP2ExtnData = 0x7F000009,
+   OMX_ExtraDataMP2UserData = 0x7F00000a,
+   OMX_ExtraDataVideoLTRInfo = 0x7F00000b
 } OMX_QCOM_EXTRADATATYPE;
 
 typedef struct  OMX_STREAMINTERLACEFORMATTYPE {
@@ -1076,26 +891,10 @@ typedef enum OMX_INTERLACETYPE
    OMX_InterlaceInterleaveFrameBottomFieldFirst,
    OMX_InterlaceFrameTopFieldFirst,
    OMX_InterlaceFrameBottomFieldFirst
-} OMX_INTERLACES;
+}OMX_INTERLACEs;
 
 
 #define OMX_EXTRADATA_HEADER_SIZE 20
-
-/**
- * AVC profile types, each profile indicates support for various
- * performance bounds and different annexes.
- */
-typedef enum QOMX_VIDEO_AVCPROFILETYPE {
-    QOMX_VIDEO_AVCProfileBaseline      = OMX_VIDEO_AVCProfileBaseline,
-    QOMX_VIDEO_AVCProfileMain          = OMX_VIDEO_AVCProfileMain,
-    QOMX_VIDEO_AVCProfileExtended      = OMX_VIDEO_AVCProfileExtended,
-    QOMX_VIDEO_AVCProfileHigh          = OMX_VIDEO_AVCProfileHigh,
-    QOMX_VIDEO_AVCProfileHigh10        = OMX_VIDEO_AVCProfileHigh10,
-    QOMX_VIDEO_AVCProfileHigh422       = OMX_VIDEO_AVCProfileHigh422,
-    QOMX_VIDEO_AVCProfileHigh444       = OMX_VIDEO_AVCProfileHigh444,
-    /* QCom specific profile indexes */
-    QOMX_VIDEO_AVCProfileConstrainedBaseline   = OMX_VIDEO_AVCProfileVendorStartUnused + 1,
-} QOMX_VIDEO_AVCPROFILETYPE;
 
 /**
  * DivX Versions
@@ -1258,34 +1057,15 @@ typedef struct QOMX_INDEXEXTRADATATYPE {
 } QOMX_INDEXEXTRADATATYPE;
 
 typedef struct QOMX_INDEXTIMESTAMPREORDER {
-    OMX_U32 nSize;
-    OMX_VERSIONTYPE nVersion;
-    OMX_U32 nPortIndex;
-    OMX_BOOL bEnable;
+	OMX_U32 nSize;
+	OMX_VERSIONTYPE nVersion;
+	OMX_U32 nPortIndex;
+	OMX_BOOL bEnable;
 } QOMX_INDEXTIMESTAMPREORDER;
-
-typedef struct QOMX_INDEXDOWNSCALAR {
-        OMX_U32 nSize;
-        OMX_VERSIONTYPE nVersion;
-        OMX_U32 nPortIndex;
-        OMX_BOOL bEnable;
-} QOMX_INDEXDOWNSCALAR;
-
-typedef struct QOMX_VIDEO_CUSTOM_BUFFERSIZE {
-        OMX_U32 nSize;
-        OMX_VERSIONTYPE nVersion;
-        OMX_U32 nPortIndex;
-        OMX_U32 nBufferSize;
-} QOMX_VIDEO_CUSTOM_BUFFERSIZE;
 
 #define OMX_QCOM_INDEX_PARAM_VIDEO_SYNCFRAMEDECODINGMODE "OMX.QCOM.index.param.video.SyncFrameDecodingMode"
 #define OMX_QCOM_INDEX_PARAM_INDEXEXTRADATA "OMX.QCOM.index.param.IndexExtraData"
 #define OMX_QCOM_INDEX_PARAM_VIDEO_SLICEDELIVERYMODE "OMX.QCOM.index.param.SliceDeliveryMode"
-#define OMX_QCOM_INDEX_PARAM_VIDEO_FRAMEPACKING_EXTRADATA "OMX.QCOM.index.param.video.FramePackingExtradata"
-#define OMX_QCOM_INDEX_PARAM_VIDEO_QP_EXTRADATA "OMX.QCOM.index.param.video.QPExtradata"
-#define OMX_QCOM_INDEX_PARAM_VIDEO_INPUTBITSINFO_EXTRADATA "OMX.QCOM.index.param.video.InputBitsInfoExtradata"
-#define OMX_QCOM_INDEX_PARAM_VIDEO_EXTNUSER_EXTRADATA "OMX.QCOM.index.param.video.ExtnUserExtraData"
-#define OMX_QCOM_INDEX_CONFIG_VIDEO_FRAMEPACKING_INFO "OMX.QCOM.index.config.video.FramePackingInfo"
 
 typedef enum {
     QOMX_VIDEO_FRAME_PACKING_CHECKERBOARD = 0,
@@ -1302,30 +1082,14 @@ typedef enum {
     QOMX_VIDEO_CONTENT_RL_VIEW = 2,
 } QOMX_VIDEO_CONTENT_INTERPRETATION;
 
-/**
- * Specifies the extended picture types. These values should be
- * OR'd along with the types defined in OMX_VIDEO_PICTURETYPE to
- * signal all pictures types which are allowed.
- *
- * ENUMS:
- *  H.264 Specific Picture Types:   IDR
- */
-typedef enum QOMX_VIDEO_PICTURETYPE {
-    QOMX_VIDEO_PictureTypeIDR = OMX_VIDEO_PictureTypeVendorStartUnused + 0x1000
-} QOMX_VIDEO_PICTURETYPE;
-
-typedef enum QOMX_VIDEO_HIERARCHICALCODINGTYPE {
-    QOMX_HIERARCHICALCODING_P = 0x01,
-    QOMX_HIERARCHICALCODING_B = 0x02,
-} QOMX_VIDEO_HIERARCHICALCODINGTYPE;
-
-typedef struct QOMX_VIDEO_HIERARCHICALLAYERS {
+// A pointer to this struct is passed to OMX_SetParameter when the extension
+// index for the 'OMX.google.android.index.setVUIStreamRestrictFlag' extension
+// is given.
+typedef struct QOMX_VUI_BITSTREAM_RESTRICT {
     OMX_U32 nSize;
     OMX_VERSIONTYPE nVersion;
-    OMX_U32 nPortIndex;
-    OMX_U32 nNumLayers;
-    QOMX_VIDEO_HIERARCHICALCODINGTYPE eHierarchicalCodingType;
-} QOMX_VIDEO_HIERARCHICALLAYERS;
+    OMX_BOOL bEnable;
+} QOMX_VUI_BITSTREAM_RESTRICT;
 
 #ifdef __cplusplus
 }

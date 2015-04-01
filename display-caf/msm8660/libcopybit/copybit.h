@@ -75,7 +75,6 @@ enum {
     COPYBIT_FRAMEBUFFER_WIDTH = 7,
     /* FB height */
     COPYBIT_FRAMEBUFFER_HEIGHT = 8,
-    COPYBIT_FG_LAYER = 9,
 };
 
 /* values for copybit_set_parameter(COPYBIT_TRANSFORM) */
@@ -212,18 +211,6 @@ struct copybit_device_t {
                 struct copybit_region_t const *region);
 
     /**
-     * Give acquire fence to copybit to be used in upcoming stretch
-     * call
-     *
-     * @param dev from open
-     * @param acquireFenceFd is the acquire fence
-     *
-     * @return 0 if successful
-     */
-    int (*set_sync)(struct copybit_device_t *dev,
-                   int acquireFenceFd);
-
-    /**
      * Execute the stretch bit blit copy operation
      *
      * @param dev from open
@@ -241,21 +228,6 @@ struct copybit_device_t {
                    struct copybit_rect_t const *dst_rect,
                    struct copybit_rect_t const *src_rect,
                    struct copybit_region_t const *region);
-
-    /**
-     * Fill the rect on dst with RGBA color
-     *
-     * @param dev from open
-     * @param dst is destination image
-     * @param rect is destination rectangle
-     * @param color is RGBA color to fill
-     *
-     * @return 0 if successful
-     */
-    int (*fill_color)(struct copybit_device_t *dev,
-                      struct copybit_image_t const *dst,
-                      struct copybit_rect_t const *rect,
-                      uint32_t color);
 
   /**
     * Execute the completion of the copybit draw operation.

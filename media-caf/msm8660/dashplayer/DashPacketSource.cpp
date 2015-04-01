@@ -60,7 +60,7 @@ void DashPacketSource::updateFormat(const sp<MetaData> &meta) {
 DashPacketSource::~DashPacketSource() {
 }
 
-status_t DashPacketSource::start(MetaData * /*params*/) {
+status_t DashPacketSource::start(MetaData *params) {
     return OK;
 }
 
@@ -190,6 +190,21 @@ void DashPacketSource::queueDiscontinuity(
         mEOSResult = OK;
         mCondition.signal();
         return;
+    }
+
+    // Leave only discontinuities in the queue.
+    List<sp<ABuffer> >::iterator it = mBuffers.begin();
+    while (it != mBuffers.end()) {
+        sp<ABuffer> oldBuffer = *it;
+
+        int32_t oldDiscontinuityType;
+        if (!oldBuffer->meta()->findInt32(
+                    "discontinuity", &oldDiscontinuityType)) {
+            it = mBuffers.erase(it);
+            continue;
+        }
+
+        ++it;
     }
 
     mEOSResult = OK;

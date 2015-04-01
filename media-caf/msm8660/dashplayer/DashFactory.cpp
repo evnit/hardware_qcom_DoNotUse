@@ -1,7 +1,6 @@
 /*
  *Copyright (c) 2013, The Linux Foundation. All rights reserved.
- *Not a Contribution, Apache license notifications and license are retained
- *for attribution purposes only.
+ *Not a Contribution.
  *
  * Copyright (C) 2010 The Android Open Source Project
  *
@@ -29,22 +28,26 @@ namespace android {
 
 class DashPlayerFactory : public MediaPlayerFactory::IFactory {
   public:
-    virtual float scoreFactory(const sp<IMediaPlayer>& /*client*/,
+    virtual float scoreFactory(const sp<IMediaPlayer>& client,
                                const char* url,
-                               float /*curScore*/) {
+                               float curScore) {
+        static const float kOurScore = 0.8;
+
+        if (kOurScore <= curScore)
+            return 0.0;
+
         if (!strncasecmp("http://", url, 7)) {
             size_t len = strlen(url);
             if (len >= 5 && !strcasecmp(".mpd", &url[len - 4])) {
-                ALOGI("Using DashPlayer for .mpd");
-                return 1.0;
+                return kOurScore;
             }
         }
         return 0.0;
     }
 
-    virtual float scoreFactory(const sp<IMediaPlayer>& /*client*/,
-                               const sp<IStreamSource> & /*source*/,
-                               float /*curScore*/) {
+    virtual float scoreFactory(const sp<IMediaPlayer>& client,
+                               const sp<IStreamSource> &source,
+                               float curScore) {
         return 0.0;
     }
 

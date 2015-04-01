@@ -1,5 +1,5 @@
 /*
-* Copyright (c) 2013-14 The Linux Foundation. All rights reserved.
+* Copyright (c) 2013 The Linux Foundation. All rights reserved.
 *
 * Redistribution and use in source and binary forms, with or without
 * modification, are permitted provided that the following conditions are
@@ -74,10 +74,6 @@ inline android::status_t screenRefresh() {
     return sendSingleParam(qService::IQService::SCREEN_REFRESH, 1);
 }
 
-inline android::status_t setPTORStatus(uint32_t enable) {
-    return sendSingleParam(qService::IQService::SET_PTOR_MODE, enable);
-}
-
 inline android::status_t setExtOrientation(uint32_t orientation) {
     return sendSingleParam(qService::IQService::EXTERNAL_ORIENTATION,
             orientation);
@@ -87,11 +83,4 @@ inline android::status_t setBufferMirrorMode(uint32_t enable) {
     return sendSingleParam(qService::IQService::BUFFER_MIRRORMODE, enable);
 }
 
-inline android::status_t pauseWFD(uint32_t pause) {
-    return sendSingleParam(qService::IQService::PAUSE_WFD, pause);
-}
-
-inline android::status_t setWfdStatus(uint32_t wfdStatus) {
-    return sendSingleParam(qService::IQService::SET_WFD_STATUS, wfdStatus);
-}
 #endif /* end of include guard: QSERVICEUTILS_H */

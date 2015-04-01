@@ -1,7 +1,7 @@
 
 /*
  * Copyright (C) 2010 The Android Open Source Project
- * Copyright (C) 2012-14, The Linux Foundation. All rights reserved.
+ * Copyright (C) 2012, The Linux Foundation. All rights reserved.
  *
  * Not a Contribution, Apache license notifications and license are
  * retained for attribution purposes only.
@@ -32,17 +32,33 @@
 #include "comptype.h"
 #include "external.h"
 #include "virtual.h"
-#include "hwc_virtual.h"
 #include "mdp_version.h"
 using namespace overlay;
 namespace qhwc {
 #define HWC_UEVENT_SWITCH_STR  "change@/devices/virtual/switch/"
 #define HWC_UEVENT_THREAD_NAME "hwcUeventThread"
 
+/* External Display states */
+enum {
+    EXTERNAL_OFFLINE = 0,
+    EXTERNAL_ONLINE,
+    EXTERNAL_PAUSE,
+    EXTERNAL_RESUME
+};
+
 static void setup(hwc_context_t* ctx, int dpy)
 {
-    ctx->mFBUpdate[dpy] = IFBUpdate::getObject(ctx, dpy);
-    ctx->mMDPComp[dpy] =  MDPComp::getObject(ctx, dpy);
+    ctx->mFBUpdate[dpy] =
+        IFBUpdate::getObject(ctx, ctx->dpyAttr[dpy].xres, dpy);
+    ctx->mMDPComp[dpy] =
+        MDPComp::getObject(ctx->dpyAttr[dpy].xres, dpy);
+    int compositionType =
+                qdutils::QCCompositionType::getInstance().getCompositionType();
+    if (compositionType & (qdutils::COMPOSITION_TYPE_DYN |
+                           qdutils::COMPOSITION_TYPE_MDP |
+                           qdutils::COMPOSITION_TYPE_C2D)) {
+        ctx->mCopyBit[dpy] = new CopyBit(ctx, dpy);
+    }
 }
 
 static void clear(hwc_context_t* ctx, int dpy)
@@ -50,6 +66,10 @@ static void clear(hwc_context_t* ctx, int dpy)
     if(ctx->mFBUpdate[dpy]) {
         delete ctx->mFBUpdate[dpy];
         ctx->mFBUpdate[dpy] = NULL;
+    }
+    if(ctx->mCopyBit[dpy]){
+        delete ctx->mCopyBit[dpy];
+        ctx->mCopyBit[dpy] = NULL;
     }
     if(ctx->mMDPComp[dpy]) {
         delete ctx->mMDPComp[dpy];
@@ -74,7 +94,7 @@ static bool getPanelResetStatus(hwc_context_t* ctx, const char* strUdata, int le
         while(((iter_str - strUdata) <= len) && (*iter_str)) {
             char* pstr = strstr(iter_str, "PANEL_ALIVE=0");
             if (pstr != NULL) {
-                ALOGI("%s: got change event in fb0 with PANEL_ALIVE=0",
+                ALOGE("%s: got change event in fb0 with PANEL_ALIVE=0",
                                                            __FUNCTION__);
                 ctx->mPanelResetStatus = true;
                 return true;
@@ -99,20 +119,6 @@ static int getConnectedState(const char* strUdata, int len)
     return -1;
 }
 
-void handle_pause(hwc_context_t* ctx, int dpy) {
-    if(ctx->mHWCVirtual) {
-        ctx->mHWCVirtual->pause(ctx, dpy);
-    }
-    return;
-}
-
-void handle_resume(hwc_context_t* ctx, int dpy) {
-    if(ctx->mHWCVirtual) {
-        ctx->mHWCVirtual->resume(ctx, dpy);
-    }
-    return;
-}
-
 static void handle_uevent(hwc_context_t* ctx, const char* udata, int len)
 {
     bool bpanelReset = getPanelResetStatus(ctx, udata, len);
@@ -129,7 +135,7 @@ static void handle_uevent(hwc_context_t* ctx, const char* udata, int len)
 
     int switch_state = getConnectedState(udata, len);
 
-    ALOGE_IF(UEVENT_DEBUG,"%s: uevent received: %s switch state: %d",
+    ALOGE_IF(UEVENT_DEBUG,"%s: uevent recieved: %s switch state: %d",
              __FUNCTION__,udata, switch_state);
 
     switch(switch_state) {
@@ -146,8 +152,27 @@ static void handle_uevent(hwc_context_t* ctx, const char* udata, int len)
             clear(ctx, dpy);
             ctx->dpyAttr[dpy].connected = false;
             ctx->dpyAttr[dpy].isActive = false;
-            /* If disconnect comes before any composition cycle */
-            ctx->dpyAttr[dpy].isConfiguring = false;
+
+            /* We need to send hotplug to SF only when we are disconnecting
+             * (1) HDMI OR (2) proprietary WFD session */
+            if(dpy == HWC_DISPLAY_EXTERNAL ||
+                    ctx->mVirtualonExtActive) {
+                ALOGE_IF(UEVENT_DEBUG,"%s:Sending EXTERNAL OFFLINE hotplug"
+                        "event", __FUNCTION__);
+                ctx->proc->hotplug(ctx->proc, HWC_DISPLAY_EXTERNAL,
+                        EXTERNAL_OFFLINE);
+                ctx->mVirtualonExtActive = false;
+            }
+            ctx->proc->invalidate(ctx->proc);
+            ctx->mDrawLock.wait();
+            // At this point all the pipes used by External have been
+            // marked as UNSET.
+
+            // Perform commit to unstage the pipes.
+            if (!Overlay::displayCommit(ctx->dpyAttr[dpy].fd)) {
+                ALOGE("%s: display commit fail! for %d dpy",
+                        __FUNCTION__, dpy);
+            }
 
             if(dpy == HWC_DISPLAY_EXTERNAL) {
                 ctx->mExtDisplay->teardown();
@@ -156,16 +181,6 @@ static void handle_uevent(hwc_context_t* ctx, const char* udata, int len)
             }
             ctx->mDrawLock.unlock();
 
-            /* We need to send hotplug to SF only when we are disconnecting
-             * (1) HDMI OR (2) proprietary WFD session */
-            if(dpy == HWC_DISPLAY_EXTERNAL ||
-               ctx->mVirtualonExtActive) {
-                ALOGE_IF(UEVENT_DEBUG,"%s:Sending EXTERNAL OFFLINE hotplug"
-                         "event", __FUNCTION__);
-                ctx->proc->hotplug(ctx->proc, HWC_DISPLAY_EXTERNAL,
-                                   EXTERNAL_OFFLINE);
-                ctx->mVirtualonExtActive = false;
-            }
             break;
         }
     case EXTERNAL_ONLINE:
@@ -176,7 +191,7 @@ static void handle_uevent(hwc_context_t* ctx, const char* udata, int len)
                          "for display: %d", __FUNCTION__, dpy);
                 break;
             }
-            ctx->mDrawLock.lock();
+
             //Force composition to give up resources like pipes and
             //close fb. For example if assertive display is going on,
             //fb2 could be open, thus connecting Layer Mixer#0 to
@@ -185,48 +200,44 @@ static void handle_uevent(hwc_context_t* ctx, const char* udata, int len)
             //fail, since Layer Mixer#0 is still connected to WriteBack.
             //This block will force composition to close fb2 in above
             //example.
+            ctx->mDrawLock.lock();
             ctx->dpyAttr[dpy].isConfiguring = true;
-            ctx->mDrawLock.unlock();
-
             ctx->proc->invalidate(ctx->proc);
-            //2 cycles for slower content
-            usleep(ctx->dpyAttr[HWC_DISPLAY_PRIMARY].vsync_period
-                   * 2 / 1000);
 
+            ctx->mDrawLock.wait();
+            ctx->mDrawLock.unlock();
             if(dpy == HWC_DISPLAY_EXTERNAL) {
                 if(ctx->dpyAttr[HWC_DISPLAY_VIRTUAL].connected) {
                     ALOGD_IF(UEVENT_DEBUG,"Received HDMI connection request"
                              "when WFD is active");
-                    {
-                        Locker::Autolock _l(ctx->mDrawLock);
-                        clear(ctx, HWC_DISPLAY_VIRTUAL);
-                        ctx->dpyAttr[HWC_DISPLAY_VIRTUAL].connected = false;
-                        ctx->dpyAttr[HWC_DISPLAY_VIRTUAL].isActive = false;
-                    }
 
-                    ctx->mVirtualDisplay->teardown();
+                    ctx->mDrawLock.lock();
+                    clear(ctx, HWC_DISPLAY_VIRTUAL);
+                    ctx->dpyAttr[HWC_DISPLAY_VIRTUAL].connected = false;
+                    ctx->dpyAttr[HWC_DISPLAY_VIRTUAL].isActive = false;
 
                     /* Need to send hotplug only when connected WFD in
                      * proprietary path */
                     if(ctx->mVirtualonExtActive) {
                         ALOGE_IF(UEVENT_DEBUG,"%s: Sending EXTERNAL OFFLINE"
-                                 "hotplug event", __FUNCTION__);
+                                "hotplug event", __FUNCTION__);
                         ctx->proc->hotplug(ctx->proc, HWC_DISPLAY_EXTERNAL,
-                                           EXTERNAL_OFFLINE);
-                        {
-                            Locker::Autolock _l(ctx->mDrawLock);
-                            ctx->mVirtualonExtActive = false;
-                        }
+                                EXTERNAL_OFFLINE);
+                        ctx->mVirtualonExtActive = false;
                     }
+                    ctx->proc->invalidate(ctx->proc);
 
-                    ctx->mWfdSyncLock.lock();
-                    ALOGD_IF(HWC_WFDDISPSYNC_LOG,
-                             "%s: Waiting for wfd-teardown to be signalled",
-                             __FUNCTION__);
-                    ctx->mWfdSyncLock.wait();
-                    ALOGD_IF(HWC_WFDDISPSYNC_LOG,
-                             "%s: Teardown signalled",__FUNCTION__);
-                    ctx->mWfdSyncLock.unlock();
+                    ctx->mDrawLock.wait();
+                    // At this point all the pipes used by WFD(Virtual) have been
+                    // marked as UNSET.
+                    // Perform commit to unstage the pipes.
+                    if (!Overlay::displayCommit(ctx->dpyAttr[HWC_DISPLAY_VIRTUAL].fd)) {
+                        ALOGE("%s: display commit fail! for %d dpy",
+                                __FUNCTION__, HWC_DISPLAY_VIRTUAL);
+                    }
+                    ctx->mDrawLock.unlock();
+
+                    ctx->mVirtualDisplay->teardown();
                 }
                 ctx->mExtDisplay->configure();
             } else {
@@ -246,12 +257,11 @@ static void handle_uevent(hwc_context_t* ctx, const char* udata, int len)
                 ctx->mVirtualDisplay->configure();
             }
 
-            ctx->mDrawLock.lock();
+            Locker::Autolock _l(ctx->mDrawLock);
             setup(ctx, dpy);
             ctx->dpyAttr[dpy].isPause = false;
             ctx->dpyAttr[dpy].connected = true;
             ctx->dpyAttr[dpy].isConfiguring = true;
-            ctx->mDrawLock.unlock();
 
             if(dpy == HWC_DISPLAY_EXTERNAL ||
                ctx->mVirtualonExtActive) {
@@ -271,17 +281,59 @@ static void handle_uevent(hwc_context_t* ctx, const char* udata, int len)
         }
         case EXTERNAL_PAUSE:
             {   // pause case
-                ALOGD("%s Received Pause event",__FUNCTION__);
-                handle_pause(ctx, dpy);
-                break;
+
+                 ALOGD("%s Received Pause event",__FUNCTION__);
+                 /* Display already in pause */
+                 if(ctx->dpyAttr[dpy].isPause) {
+                    ALOGE_IF(UEVENT_DEBUG,"%s: Ignoring EXTERNAL_PAUSE event"
+                             "for display: %d", __FUNCTION__, dpy);
+                    break;
+                 }
+
+                 ctx->mDrawLock.lock();
+                 ctx->dpyAttr[dpy].isActive = true;
+                 ctx->dpyAttr[dpy].isPause = true;
+                 ctx->proc->invalidate(ctx->proc);
+
+                 ctx->mDrawLock.wait();
+                 // At this point all the pipes used by External have been
+                 // marked as UNSET.
+                 // Perform commit to unstage the pipes.
+                 if (!Overlay::displayCommit(ctx->dpyAttr[dpy].fd)) {
+                     ALOGE("%s: display commit fail! for %d dpy",
+                             __FUNCTION__, dpy);
+                 }
+                 ctx->mDrawLock.unlock();
+
+                 break;
             }
         case EXTERNAL_RESUME:
             {  // resume case
+
                 ALOGD("%s Received resume event",__FUNCTION__);
+
+                /* Display already is resumed */
+                if(not ctx->dpyAttr[dpy].isPause) {
+                    ALOGE_IF(UEVENT_DEBUG,"%s: Ignoring EXTERNAL_RESUME event"
+                             "for display: %d", __FUNCTION__, dpy);
+                    break;
+                }
+
                 //Treat Resume as Online event
                 //Since external didnt have any pipes, force primary to give up
                 //its pipes; we don't allow inter-mixer pipe transfers.
-                handle_resume(ctx, dpy);
+
+                ctx->mDrawLock.lock();
+                ctx->dpyAttr[dpy].isConfiguring = true;
+                ctx->dpyAttr[dpy].isActive = true;
+                ctx->proc->invalidate(ctx->proc);
+
+                ctx->mDrawLock.wait();
+                //At this point external has all the pipes it would need.
+                ctx->dpyAttr[dpy].isPause = false;
+                ctx->proc->invalidate(ctx->proc);
+                ctx->mDrawLock.unlock();
+
                 break;
             }
     default:

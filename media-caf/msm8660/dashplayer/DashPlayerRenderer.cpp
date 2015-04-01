@@ -23,7 +23,6 @@
 #include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/foundation/ADebug.h>
 #include <media/stagefright/foundation/AMessage.h>
-#include <cutils/properties.h>
 
 namespace android {
 
@@ -42,7 +41,6 @@ DashPlayer::Renderer::Renderer(
       mVideoQueueGeneration(0),
       mAnchorTimeMediaUs(-1),
       mAnchorTimeRealUs(-1),
-      mSeekTimeUs(0),
       mFlushingAudio(false),
       mFlushingVideo(false),
       mHasAudio(false),
@@ -52,22 +50,8 @@ DashPlayer::Renderer::Renderer(
       mWasPaused(false),
       mLastPositionUpdateUs(-1ll),
       mVideoLateByUs(0ll),
-      mStats(NULL){
-
-      mAVSyncDelayWindowUs = 40000;
-
-      char avSyncDelayMsec[PROPERTY_VALUE_MAX] = {0};
-      property_get("persist.dash.avsync.window.msec", avSyncDelayMsec, NULL);
-
-      if(*avSyncDelayMsec) {
-          int64_t avSyncDelayWindowUs = atoi(avSyncDelayMsec) * 1000;
-
-          if(avSyncDelayWindowUs > 0) {
-             mAVSyncDelayWindowUs = avSyncDelayWindowUs;
-          }
-      }
-
-      ALOGV("AVsync window in Us %lld", mAVSyncDelayWindowUs);
+      mStats(NULL),
+      mSeekTimeUs(0){
 }
 
 DashPlayer::Renderer::~Renderer() {
@@ -126,10 +110,6 @@ void DashPlayer::Renderer::signalTimeDiscontinuity() {
     mWasPaused = false;
     mSeekTimeUs = 0;
     mSyncQueues = mHasAudio && mHasVideo;
-    mIsFirstVideoframeReceived = false;
-    mPendingPostAudioDrains = false;
-    mHasAudio = false;
-    mHasVideo = false;
     ALOGI("signalTimeDiscontinuity mHasAudio %d mHasVideo %d mSyncQueues %d",mHasAudio,mHasVideo,mSyncQueues);
 }
 
@@ -431,7 +411,7 @@ void DashPlayer::Renderer::onDrainVideoQueue() {
     int64_t nowUs = ALooper::GetNowUs();
     mVideoLateByUs = nowUs - realTimeUs;
 
-    bool tooLate = (mVideoLateByUs > mAVSyncDelayWindowUs);
+    bool tooLate = (mVideoLateByUs > 40000);
 
     if (tooLate) {
         ALOGV("video late by %lld us (%.2f secs)",
@@ -492,30 +472,9 @@ void DashPlayer::Renderer::onQueueBuffer(const sp<AMessage> &msg) {
 
     if (audio) {
         mAudioQueue.push_back(entry);
-        int64_t audioTimeUs;
-        (buffer->meta())->findInt64("timeUs", &audioTimeUs);
-        if ((mHasVideo && mIsFirstVideoframeReceived)
-            || !mHasVideo){
         postDrainAudioQueue();
-            return;
-        }
-        else
-        {
-          mPendingPostAudioDrains = true;
-          ALOGE("Not rendering Audio Sample with TS: %lld  as Video frame is not decoded", audioTimeUs);
-        }
     } else {
         mVideoQueue.push_back(entry);
-        int64_t videoTimeUs;
-        (buffer->meta())->findInt64("timeUs", &videoTimeUs);
-        if (!mIsFirstVideoframeReceived) {
-            mIsFirstVideoframeReceived = true;
-            ALOGE("Received first video Sample with TS: %lld", videoTimeUs);
-            if (mPendingPostAudioDrains) {
-                mPendingPostAudioDrains = false;
-                postDrainAudioQueue();
-            }
-        }
         postDrainVideoQueue();
     }
 
