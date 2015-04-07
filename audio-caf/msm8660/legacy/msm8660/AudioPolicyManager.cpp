@@ -303,8 +303,8 @@ status_t AudioPolicyManager::setDeviceConnectionState(audio_devices_t device,
                     mScoDeviceAddress = String8(device_address, MAX_DEVICE_ADDRESS_LEN);
                 } else if (audio_is_usb_device(device)) {
                     // handle USB device connection
-                    mUsbOutCardAndDevice = String8(device_address, MAX_DEVICE_ADDRESS_LEN);
-                    paramStr = mUsbOutCardAndDevice;
+                    mUsbCardAndDevice = String8(device_address, MAX_DEVICE_ADDRESS_LEN);
+                    paramStr = mUsbCardAndDevice;
                 }
                 // not currently handling multiple simultaneous submixes: ignoring remote submix
                 //   case and address
@@ -341,7 +341,7 @@ status_t AudioPolicyManager::setDeviceConnectionState(audio_devices_t device,
                 mScoDeviceAddress = "";
             } else if (audio_is_usb_device(device)) {
                 // handle USB device disconnection
-                mUsbOutCardAndDevice = "";
+                mUsbCardAndDevice = "";
 
                 AudioParameter param;
                 param.add(String8("usb_connected"), String8("false"));
@@ -403,6 +403,14 @@ status_t AudioPolicyManager::setDeviceConnectionState(audio_devices_t device,
 #endif
         for (int i = mOutputs.size() -1; i >= 0; i--) {
             audio_devices_t newDevice = getNewDevice(mOutputs.keyAt(i), true /*fromCache*/);
+#ifdef QCOM_ANC_HEADSET_ENABLED
+            if(device == AUDIO_DEVICE_OUT_ANC_HEADPHONE ||
+               device == AUDIO_DEVICE_OUT_ANC_HEADSET) {
+                if(newDevice == 0){
+                    newDevice = getDeviceForStrategy(STRATEGY_MEDIA, false);
+                }
+            }
+#endif
             setOutputDevice(mOutputs.keyAt(i),
                             getNewDevice(mOutputs.keyAt(i), true /*fromCache*/),
                             true,
@@ -417,6 +425,10 @@ status_t AudioPolicyManager::setDeviceConnectionState(audio_devices_t device,
             device = AUDIO_DEVICE_IN_BLUETOOTH_SCO_HEADSET;
         } else if(device == AUDIO_DEVICE_OUT_ANLG_DOCK_HEADSET){
             device = AUDIO_DEVICE_IN_ANLG_DOCK_HEADSET;
+#ifdef QCOM_ANC_HEADSET_ENABLED
+        } else if(device == AUDIO_DEVICE_OUT_ANC_HEADSET){
+               device = AUDIO_DEVICE_IN_ANC_HEADSET; //wait for actual ANC device
+#endif
         } else {
             return NO_ERROR;
         }
@@ -487,7 +499,7 @@ AudioSystem::device_connection_state AudioPolicyManager::getDeviceConnectionStat
                 return state;
             }
             if (audio_is_usb_device(device) &&
-                ((address != "" && mUsbOutCardAndDevice != address))) {
+                ((address != "" && mUsbCardAndDevice != address))) {
                 ALOGE("getDeviceConnectionState() invalid device: %x", device);
                 return state;
             }
@@ -719,8 +731,8 @@ void AudioPolicyManager::setForceUse(AudioSystem::force_use usage, AudioSystem::
 
 audio_io_handle_t AudioPolicyManager::getOutput(AudioSystem::stream_type stream,
                                     uint32_t samplingRate,
-                                    audio_format_t format,
-                                    audio_channel_mask_t channelMask,
+                                    uint32_t format,
+                                    uint32_t channelMask,
                                     AudioSystem::output_flags flags,
                                     const audio_offload_info_t *offloadInfo)
 {
@@ -802,8 +814,8 @@ audio_io_handle_t AudioPolicyManager::getOutput(AudioSystem::stream_type stream,
         outputDesc = new AudioOutputDescriptor(profile);
         outputDesc->mDevice = device;
         outputDesc->mSamplingRate = samplingRate;
-        outputDesc->mFormat = format;
-        outputDesc->mChannelMask = channelMask;
+        outputDesc->mFormat = (audio_format_t)format;
+        outputDesc->mChannelMask = (audio_channel_mask_t)channelMask;
         outputDesc->mLatency = 0;
         outputDesc->mFlags =(audio_output_flags_t) (outputDesc->mFlags | flags);
         outputDesc->mRefCount[stream] = 0;
@@ -842,7 +854,7 @@ audio_io_handle_t AudioPolicyManager::getOutput(AudioSystem::stream_type stream,
     // ignoring channel mask due to downmix capability in mixer
 
     // for non direct outputs, only PCM is supported
-    if (audio_is_linear_pcm(format)) {
+    if (audio_is_linear_pcm((audio_format_t)format)) {
         // get which output is suitable for the specified stream. The actual
         // routing change will happen when startOutput() will be called
     SortedVector<audio_io_handle_t> outputs = getOutputsForDevice(device, mOutputs);
@@ -963,7 +975,7 @@ status_t AudioPolicyManager::stopOutput(audio_io_handle_t output,
         if (outputDesc->mRefCount[stream] == 0) {
             outputDesc->mStopTime[stream] = systemTime();
 
-            if ((outputDesc->mRefCount[AUDIO_STREAM_RING]!= 0) && (stream == AudioSystem::VOICE_CALL)) {
+            if ((outputDesc->mRefCount[AUDIO_STREAM_RING]!= 0) && (stream == AUDIO_STREAM_VOICE_CALL)) {
                  // When AUDIO_STREAM_RING is present, Send Mute on RING
                  // if it gets stopOutput on  AUDIO_STREAM_VOICE_CALL
                  setStreamMute(AudioSystem::RING, true, mPrimaryOutput);
@@ -1005,8 +1017,8 @@ status_t AudioPolicyManager::stopOutput(audio_io_handle_t output,
 
 audio_io_handle_t AudioPolicyManager::getInput(int inputSource,
                                     uint32_t samplingRate,
-                                    audio_format_t format,
-                                    audio_channel_mask_t channelMask,
+                                    uint32_t format,
+                                    uint32_t channelMask,
                                     AudioSystem::audio_in_acoustics acoustics)
 {
     audio_io_handle_t input = 0;
@@ -1056,8 +1068,8 @@ audio_io_handle_t AudioPolicyManager::getInput(int inputSource,
     inputDesc->mInputSource = inputSource;
     inputDesc->mDevice = device;
     inputDesc->mSamplingRate = samplingRate;
-    inputDesc->mFormat = format;
-    inputDesc->mChannelMask = channelMask;
+    inputDesc->mFormat = (audio_format_t)format;
+    inputDesc->mChannelMask = (audio_channel_mask_t)channelMask;
     inputDesc->mRefCount = 0;
     input = mpClientInterface->openInput(profile->mModule->mHandle,
                                     &inputDesc->mDevice,
@@ -1070,7 +1082,7 @@ audio_io_handle_t AudioPolicyManager::getInput(int inputSource,
         (samplingRate != inputDesc->mSamplingRate) ||
         (format != inputDesc->mFormat) ||
         (channelMask != inputDesc->mChannelMask)) {
-        ALOGI("getInput() failed opening input: samplingRate %d, format %d, channelMask %x",
+        ALOGV("getInput() failed opening input: samplingRate %d, format %d, channelMask %d",
                 samplingRate, format, channelMask);
         if (input != 0) {
             mpClientInterface->closeInput(input);
@@ -1407,7 +1419,7 @@ status_t AudioPolicyManager::checkOutputsForDevice(audio_devices_t device,
                     }
                     if (profile->mChannelMasks[0] == 0) {
                         profile->mChannelMasks.clear();
-                        profile->mChannelMasks.add(0);
+                        profile->mChannelMasks.add((audio_channel_mask_t)0);
                     }
                 }
             }
@@ -1475,7 +1487,6 @@ AudioPolicyManager::routing_strategy AudioPolicyManager::getStrategy(
         // while key clicks are played produces a poor result
     case AudioSystem::TTS:
     case AudioSystem::MUSIC:
-    case AudioSystem::INCALL_MUSIC:
 #ifdef QCOM_FM_ENABLED
     case AudioSystem::FM:
 #endif
@@ -1558,6 +1569,12 @@ audio_devices_t AudioPolicyManager::getDeviceForStrategy(routing_strategy strate
             if (device) break;
             device = mAvailableOutputDevices & AUDIO_DEVICE_OUT_WIRED_HEADSET;
             if (device) break;
+#ifdef QCOM_ANC_HEADSET_ENABLED
+            device = mAvailableOutputDevices & AUDIO_DEVICE_OUT_ANC_HEADPHONE;
+            if (device) break;
+            device = mAvailableOutputDevices & AUDIO_DEVICE_OUT_ANC_HEADSET;
+            if (device) break;
+#endif
             if (mPhoneState != AudioSystem::MODE_IN_CALL) {
                 device = mAvailableOutputDevices & AUDIO_DEVICE_OUT_USB_ACCESSORY;
                 if (device) break;
@@ -1676,6 +1693,14 @@ audio_devices_t AudioPolicyManager::getDeviceForStrategy(routing_strategy strate
             if (device2 == AUDIO_DEVICE_NONE) {
                 device2 = mAvailableOutputDevices & AUDIO_DEVICE_OUT_WIRED_HEADSET;
             }
+#ifdef QCOM_ANC_HEADSET_ENABLED
+            if (device2 == AUDIO_DEVICE_NONE) {
+                device2 = mAvailableOutputDevices & AUDIO_DEVICE_OUT_ANC_HEADPHONE;
+            }
+            if (device2 == AUDIO_DEVICE_NONE) {
+                device2 = mAvailableOutputDevices & AUDIO_DEVICE_OUT_ANC_HEADSET;
+            }
+#endif
             if (device2 == AUDIO_DEVICE_NONE) {
                 device2 = mAvailableOutputDevices & AUDIO_DEVICE_OUT_USB_ACCESSORY;
             }
@@ -1813,6 +1838,10 @@ audio_devices_t AudioPolicyManager::getDeviceForInputSource(int inputSource)
             device = AUDIO_DEVICE_IN_BLUETOOTH_SCO_HEADSET;
         } else if (mAvailableInputDevices & AUDIO_DEVICE_IN_WIRED_HEADSET) {
             device = AUDIO_DEVICE_IN_WIRED_HEADSET;
+#ifdef QCOM_ANC_HEADSET_ENABLED
+        } else if (mAvailableInputDevices & AUDIO_DEVICE_IN_ANC_HEADSET) {
+            device = AUDIO_DEVICE_IN_ANC_HEADSET;
+#endif
         } else if (mAvailableInputDevices & AUDIO_DEVICE_IN_ANLG_DOCK_HEADSET) {
             device = AUDIO_DEVICE_IN_ANLG_DOCK_HEADSET;
         } else if (mAvailableInputDevices & AUDIO_DEVICE_IN_BUILTIN_MIC) {
@@ -1904,6 +1933,8 @@ AudioPolicyManager::device_category AudioPolicyManager::getDeviceCategory(audio_
             return DEVICE_CATEGORY_EARPIECE;
         case AUDIO_DEVICE_OUT_WIRED_HEADSET:
         case AUDIO_DEVICE_OUT_WIRED_HEADPHONE:
+        case AUDIO_DEVICE_OUT_ANC_HEADSET:
+        case AUDIO_DEVICE_OUT_ANC_HEADPHONE:
         case AUDIO_DEVICE_OUT_BLUETOOTH_SCO:
         case AUDIO_DEVICE_OUT_BLUETOOTH_SCO_HEADSET:
         case AUDIO_DEVICE_OUT_BLUETOOTH_A2DP:
@@ -2081,8 +2112,8 @@ void AudioPolicyManager::handleNotificationRoutingForStream(AudioSystem::stream_
 AudioPolicyManagerBase::IOProfile *AudioPolicyManager::getProfileForDirectOutput(
                                                                audio_devices_t device,
                                                                uint32_t samplingRate,
-                                                               audio_format_t format,
-                                                               audio_channel_mask_t channelMask,
+                                                               uint32_t format,
+                                                               uint32_t channelMask,
                                                                audio_output_flags_t flags)
 {
     if( !((flags & AUDIO_OUTPUT_FLAG_LPA)   ||
@@ -2111,9 +2142,9 @@ AudioPolicyManagerBase::IOProfile *AudioPolicyManager::getProfileForDirectOutput
 bool AudioPolicyManager::isCompatibleProfile(AudioPolicyManagerBase::IOProfile *profile,
                                              audio_devices_t device,
                                              uint32_t samplingRate,
-                                             audio_format_t format,
-                                             audio_channel_mask_t channelMask,
-                                             audio_output_flags_t flags)
+                                             uint32_t format,
+                                             uint32_t channelMask,
+                                            audio_output_flags_t flags)
 {
     if ((profile->mSupportedDevices & device) != device) {
         return false;

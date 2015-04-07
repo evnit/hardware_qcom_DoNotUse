@@ -512,8 +512,6 @@ public:
     // the output has exited standby
     virtual status_t    getRenderPosition(uint32_t *dspFrames);
 
-    virtual status_t    getPresentationPosition(uint64_t *frames, struct timespec *timestamp);
-
     status_t            open(int mode);
     status_t            close();
 
@@ -582,8 +580,6 @@ public:
     // return the number of audio frames written by the audio dsp to DAC since
     // the output has exited standby
     virtual status_t    getRenderPosition(uint32_t *dspFrames);
-
-    virtual status_t    getPresentationPosition(uint64_t *frames, struct timespec *timestamp);
 
     virtual status_t    getNextWriteTimestamp(int64_t *timestamp);
 
@@ -866,8 +862,6 @@ public:
     /**This method dumps the state of the audio hardware */
     //virtual status_t dumpState(int fd, const Vector<String16>& args);
 
-    virtual status_t setMasterMute(bool muted);
-
     static AudioHardwareInterface* create();
 
     int                 mode()
@@ -875,23 +869,9 @@ public:
         return mMode;
     }
 
-    virtual int createAudioPatch(unsigned int num_sources,
-                               const struct audio_port_config *sources,
-                               unsigned int num_sinks,
-                               const struct audio_port_config *sinks,
-                               audio_patch_handle_t *handle);
-
-    virtual int releaseAudioPatch(audio_patch_handle_t handle);
-
-    virtual int getAudioPort(struct audio_port *port);
-
-    virtual int setAudioPortConfig(const struct audio_port_config *config);
-
     void pauseIfUseCaseTunnelOrLPA();
     void resumeIfUseCaseTunnelOrLPA();
-#ifdef HWDEP_CAL_ENABLED
-    void initCodecCalib(void);
-#endif
+
 private:
     status_t     openExtOutput(int device);
     status_t     closeExtOutput(int device);

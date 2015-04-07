@@ -39,9 +39,6 @@
 #include <hardware_legacy/power.h>
 #include <audio_utils/resampler.h>
 #include <pthread.h>
-#ifdef HWDEP_CAL_ENABLED
-#include "sound/msmcal-hwdep.h"
-#endif
 
 #include "AudioHardwareALSA.h"
 #ifdef QCOM_USBAUDIO_ENABLED
@@ -57,10 +54,6 @@
 #endif
 
 #define MAX_FILE_NAME 50
-#ifdef HWDEP_CAL_ENABLED
-#define SOUND_TRIGGER_DEVICE_HANDSET_MONO_LOW_POWER_ACDB_ID (100)
-#define MAX_CAL_NAME 20
-#endif
 
 extern "C"
 {
@@ -96,15 +89,6 @@ extern "C"
 namespace android_audio_legacy
 {
 
-#ifdef HWDEP_CAL_ENABLED
-char cal_name_info[WCD9XXX_MAX_CAL][MAX_CAL_NAME] = {
-         "anc_cal",
-         "mbhc_cal",
-};
-
-typedef int (*acdb_loader_get_calibration_t)(char *attr, int size, void *data);
-acdb_loader_get_calibration_t acdb_loader_get_calibration;
-#endif
 // ----------------------------------------------------------------------------
 
 AudioHardwareInterface *AudioHardwareALSA::create() {
@@ -117,72 +101,6 @@ AudioHardwareInterface *AudioHardwareALSA::create() {
     }
     return hardwareInterface;
 }
-
-#ifdef HWDEP_CAL_ENABLED
-int hwUtilOpen(int cardNum)
-{
-    int fd = -1;
-    char devName[256];
-    snprintf(devName, sizeof(devName), "/dev/snd/hwC%uD%u",
-                              cardNum, WCD9XXX_CODEC_HWDEP_NODE);
-    ALOGE("%s Opening device %s\n", __func__, devName);
-    fd = open(devName, O_WRONLY);
-    if (fd < 0) {
-        ALOGE("%s: cannot open device '%s'\n", __func__, devName);
-        return fd;
-    }
-    return fd;
-}
-
-struct param_data {
-    int    use_case;
-    int    acdb_id;
-    int    get_size;
-    int    buff_size;
-    int    data_size;
-    void   *buff;
-};
-
-int sendCodecCal(acdb_loader_get_calibration_t acdb_loader_get_calibration, int fd)
-{
-    int ret = 0, type;
-
-    for (type = WCD9XXX_ANC_CAL; type < WCD9XXX_MAX_CAL; type++) {
-         struct wcdcal_ioctl_buffer codec_buffer;
-         struct param_data calib;
-         calib.get_size = 1;
-         ret = acdb_loader_get_calibration(cal_name_info[type], sizeof(struct param_data), &calib);
-         if (ret < 0) {
-             ALOGE("%s get_calibration failed\n", __func__);
-             return ret;
-         }
-         calib.get_size = 0;
-         calib.buff = malloc(calib.buff_size);
-         if(calib.buff == NULL) {
-             ALOGE("%s mem allocation for %d bytes for %s failed\n",
-                      __func__, calib.buff_size, cal_name_info[type]);
-             return -1;
-         }
-         ret = acdb_loader_get_calibration(cal_name_info[type],
-                                               sizeof(struct param_data), &calib);
-         if (ret < 0) {
-              ALOGE("%s get_calibration failed type=%s calib.size=%d\n",
-                       __func__, cal_name_info[type], codec_buffer.size);
-              free(calib.buff);
-              return ret;
-         }
-         codec_buffer.buffer = (uint8_t * )calib.buff;
-         codec_buffer.size = calib.data_size;
-         codec_buffer.cal_type = (wcd_cal_type) type;
-         if (ioctl(fd, SNDRV_CTL_IOCTL_HWDEP_CAL_TYPE, &codec_buffer) < 0)
-             ALOGE("Failed to call ioctl  for %s err=%d calib.size=%d",
-                       cal_name_info[type], errno, codec_buffer.size);
-         ALOGD("%s cal sent for %s calib.size=%d", __func__, cal_name_info[type], codec_buffer.size);
-         free(calib.buff);
-    }
-    return ret;
-}
-#endif
 
 AudioHardwareALSA::AudioHardwareALSA() :
     mALSADevice(0),mVoipInStreamCount(0),mVoipOutStreamCount(0),mVoipMicMute(false),
@@ -324,9 +242,6 @@ AudioHardwareALSA::AudioHardwareALSA() :
                 return;
             }
         }
-#ifdef HWDEP_CAL_ENABLED
-        initCodecCalib();
-#endif
         fclose(fp);
    }
    memset(ucm_name_str, 0, MAX_FILE_NAME);
@@ -478,31 +393,9 @@ AudioHardwareALSA::AudioHardwareALSA() :
         param.add(String8(AudioParameter::keySSR), String8("false"));
     }
 #endif
+
     mStatus = OK;
 }
-
-#ifdef HWDEP_CAL_ENABLED
-void AudioHardwareALSA::initCodecCalib()
-{
-    int fd;
-
-    fd = hwUtilOpen(0);
-    if (fd == -1) {
-        ALOGE("%s error open\n", __func__);
-        return;
-    }
-
-    acdb_loader_get_calibration = (acdb_loader_get_calibration_t) dlsym(mAcdbHandle, "acdb_loader_get_calibration");
-
-    if (acdb_loader_get_calibration == NULL) {
-        ALOGE("%s: ERROR. dlsym Error:%s acdb_loader_get_calibration", __func__,
-        dlerror());
-        return;
-    }
-    if (sendCodecCal(acdb_loader_get_calibration, fd) < 0)
-        ALOGE("%s: Could not send anc cal", __FUNCTION__);
-}
-#endif
 
 AudioHardwareALSA::~AudioHardwareALSA()
 {
@@ -3335,31 +3228,6 @@ bool  AudioHardwareALSA::suspendPlaybackOnExtOut_l(uint32_t activeUsecase) {
     if((!getExtOutActiveUseCases_l()) && mIsExtOutEnabled )
         return mALSADevice->suspendProxy();
     return NO_ERROR;
-}
-
-status_t AudioHardwareALSA::setMasterMute(bool muted) {
-    return INVALID_OPERATION;
-}
-
-int AudioHardwareALSA::createAudioPatch(unsigned int num_sources,
-        const struct audio_port_config *sources,
-        unsigned int num_sinks,
-        const struct audio_port_config *sinks,
-        audio_patch_handle_t *handle) {
-    return INVALID_OPERATION;
-}
-
-int AudioHardwareALSA::releaseAudioPatch(audio_patch_handle_t handle) {
-    return INVALID_OPERATION;
-}
-
-int AudioHardwareALSA::getAudioPort(struct audio_port *port) {
-    return INVALID_OPERATION;
-}
-
-int AudioHardwareALSA::setAudioPortConfig(
-        const struct audio_port_config *config) {
-    return INVALID_OPERATION;
 }
 
 }       // namespace android_audio_legacy

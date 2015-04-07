@@ -11,7 +11,7 @@ common_cflags := -D_POSIX_SOURCE
 ifneq ($(strip $(QCOM_ACDB_ENABLED)),false)
     common_cflags += -DQCOM_ACDB_ENABLED
 endif
-ifeq ($(strip $(QCOM_ANC_HEADSET_ENABLED)),true)
+ifneq ($(strip $(QCOM_ANC_HEADSET_ENABLED)),false)
     common_cflags += -DQCOM_ANC_HEADSET_ENABLED
 endif
 ifeq ($(strip $(QCOM_MULTI_VOICE_SESSION_ENABLED)),true)
@@ -129,12 +129,12 @@ ifeq ($(BOARD_HAVE_HTC_CSDCLIENT),true)
     common_cflags += -DHTC_CSDCLIENT
 endif
 
-ifeq ($(BOARD_USES_MOTOROLA_EMU_AUDIO),true)
-    common_cflags += -DMOTOROLA_EMU_AUDIO
+ifneq ($(TARGET_USES_QCOM_COMPRESSED_AUDIO),false)
+    common_cflags += -DQCOM_COMPRESSED_AUDIO_ENABLED
 endif
 
-ifeq ($(strip $(AUDIO_FEATURE_ENABLED_HWDEP_CAL)),true)
-    LOCAL_CFLAGS += -DHWDEP_CAL_ENABLED
+ifeq ($(BOARD_USES_MOTOROLA_EMU_AUDIO),true)
+    common_cflags += -DMOTOROLA_EMU_AUDIO
 endif
 
 include $(CLEAR_VARS)
