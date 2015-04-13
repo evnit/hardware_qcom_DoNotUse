@@ -62,10 +62,7 @@ ALSAStreamOps::~ALSAStreamOps()
               ALOGD("ALSAStreamOps::close() Ignore");
               return ;
           }
-
-          if(mParent->mMode == AUDIO_MODE_NORMAL) {
-             mParent->mVoipMicMute = false;
-          }
+          mParent->mVoipMicMute = 0;
           mParent->mVoipBitRate = 0;
     }
     close();
@@ -486,10 +483,7 @@ void ALSAStreamOps::close()
 
     if((!strncmp(mHandle->useCase, SND_USE_CASE_VERB_IP_VOICECALL, strlen(SND_USE_CASE_VERB_IP_VOICECALL))) ||
        (!strncmp(mHandle->useCase, SND_USE_CASE_MOD_PLAY_VOIP, strlen(SND_USE_CASE_MOD_PLAY_VOIP)))) {
-
-        if(mParent->mMode == AUDIO_MODE_NORMAL) {
-           mParent->mVoipMicMute = false;
-        }
+       mParent->mVoipMicMute = false;
        mParent->mVoipBitRate = 0;
        mParent->mVoipInStreamCount = 0;
        mParent->mVoipOutStreamCount = 0;
