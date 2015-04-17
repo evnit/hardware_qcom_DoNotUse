@@ -34,6 +34,12 @@
 #endif
 
 using namespace qdutils;
+#ifdef NO_IOMMU
+#define HEAP_ID GRALLOC_USAGE_PRIVATE_UI_CONTIG_HEAP
+#else
+#define HEAP_ID GRALLOC_USAGE_PRIVATE_IOMMU_HEAP
+#endif
+
 namespace qhwc {
 
 struct range {

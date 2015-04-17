@@ -35,7 +35,7 @@ class DashPlayerFactory : public MediaPlayerFactory::IFactory {
             size_t len = strlen(url);
             if (len >= 5 && !strcasecmp(".mpd", &url[len - 4])) {
                 ALOGI("Using DashPlayer for .mpd");
-	 return 1.0;
+                return 1.0;
             }
         }
         return 0.0;
