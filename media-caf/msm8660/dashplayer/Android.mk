@@ -1,4 +1,4 @@
-#ifneq ($(TARGET_BOARD_PLATFORM),msm8660
+#ifneq ($(TARGET_BOARD_PLATFORM),msm8960
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 # ---------------------------------------------------------------------------------
