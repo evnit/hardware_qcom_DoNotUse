@@ -38,13 +38,7 @@ namespace overlay {
 using namespace utils;
 
 Overlay::Overlay() {
-    char property[PROPERTY_VALUE_MAX];
-    if (property_get("debug.mdpcomp.maxlayer", property, NULL) > 0) {
-        PipeBook::NUM_PIPES = atoi(property);
-    } else {
-        PipeBook::NUM_PIPES = qdutils::MDPVersion::getInstance().getTotalPipes();
-    }
-
+    PipeBook::NUM_PIPES = qdutils::MDPVersion::getInstance().getTotalPipes();
     for(int i = 0; i < PipeBook::NUM_PIPES; i++) {
         mPipeBook[i].init();
     }
