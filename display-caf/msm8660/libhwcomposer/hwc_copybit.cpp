@@ -27,12 +27,6 @@
 #include "cb_utils.h"
 #include "sync/sync.h"
 
-#ifdef NO_IOMMU
-#define HEAP_ID GRALLOC_USAGE_PRIVATE_UI_CONTIG_HEAP
-#else
-#define HEAP_ID GRALLOC_USAGE_PRIVATE_IOMMU_HEAP
-#endif
-
 using namespace qdutils;
 #ifdef NO_IOMMU
 #define HEAP_ID GRALLOC_USAGE_PRIVATE_UI_CONTIG_HEAP

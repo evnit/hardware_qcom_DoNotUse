@@ -186,7 +186,7 @@ void initContext(hwc_context_t *ctx)
     // Initialize device orientation to its default orientation
     ctx->deviceOrientation = 0;
     ctx->mBufferMirrorMode = false;
-
+    ctx->mSocId = getSocIdFromSystem();
     ALOGI("Initializing Qualcomm Hardware Composer");
     ALOGI("MDP version: %d", ctx->mMDP.version);
 }
@@ -1234,7 +1234,7 @@ void setMdpFlags(hwc_layer_1_t *layer,
     }
 }
 
-inline int configRotator(Rotator *rot, Whf& whf,
+int configRotator(Rotator *rot, Whf& whf,
         const Whf& origWhf, const eMdpFlags& mdpFlags,
         const eTransform& orient,
         const int& downscale) {
@@ -1305,7 +1305,7 @@ ovutils::eDest getPipeForFb(hwc_context_t *ctx, int dpy) {
     return ov.nextPipe(ovutils::OV_MDP_PIPE_VG, dpy);
 }
 
-inline int configMdp(Overlay *ov, const PipeArgs& parg,
+int configMdp(Overlay *ov, const PipeArgs& parg,
         const eTransform& orient, const hwc_rect_t& crop,
         const hwc_rect_t& pos, const MetaData_t *metadata,
         const eDest& dest) {
@@ -1331,7 +1331,7 @@ inline int configMdp(Overlay *ov, const PipeArgs& parg,
     return 0;
 }
 
-inline void updateSource(eTransform& orient, Whf& whf,
+void updateSource(eTransform& orient, Whf& whf,
         hwc_rect_t& crop) {
     Dim srcCrop(crop.left, crop.top,
             crop.right - crop.left,
@@ -1599,6 +1599,20 @@ void LayerRotMap::setReleaseFd(const int& fence) {
     for(uint32_t i = 0; i < mCount; i++) {
         mRot[i]->setReleaseFd(dup(fence));
     }
+}
+
+int getSocIdFromSystem() {
+    FILE *device = NULL;
+    int soc_id = 0;
+    char  buffer[10];
+    int result;
+    device = fopen("/sys/devices/system/soc/soc0/id","r");
+    if(device != NULL) {
+        result = fread (buffer,1,4,device);
+        soc_id = atoi(buffer);
+        fclose(device);
+    }
+    return soc_id;
 }
 
 };//namespace qhwc

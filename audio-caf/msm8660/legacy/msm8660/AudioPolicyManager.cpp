@@ -66,9 +66,7 @@ void AudioPolicyManager::setStrategyMute(routing_strategy strategy,
     }
 }
 
-void AudioPolicyManager::releaseOutput(audio_io_handle_t output,
-                                      audio_stream_type_t stream,
-                                      audio_session_t session)
+void AudioPolicyManager::releaseOutput(audio_io_handle_t output)
 {
     ALOGV("releaseOutput() %d", output);
     ssize_t index = mOutputs.indexOfKey(output);
@@ -389,18 +387,16 @@ status_t AudioPolicyManager::setDeviceConnectionState(audio_devices_t device,
         if(device == AUDIO_DEVICE_OUT_FM) {
             if (state == AudioSystem::DEVICE_STATE_AVAILABLE) {
                 ALOGV("setDeviceConnectionState() changeRefCount Inc");
-                mOutputs.valueFor(mPrimaryOutput)->changeRefCount(AudioSystem::MUSIC, 1);
+                mOutputs.valueFor(mPrimaryOutput)->changeRefCount(AudioSystem::FM, 1);
                 newDevice = (audio_devices_t)(AudioPolicyManagerBase::getNewDevice(mPrimaryOutput, false) | AUDIO_DEVICE_OUT_FM);
-                mIsFmStream = true;
             }
             else {
                 ALOGV("setDeviceConnectionState() changeRefCount Dec");
-                mOutputs.valueFor(mPrimaryOutput)->changeRefCount(AudioSystem::MUSIC, -1);
-                mIsFmStream = true;
+                mOutputs.valueFor(mPrimaryOutput)->changeRefCount(AudioSystem::FM, -1);
             }
 
             AudioParameter param = AudioParameter();
-            param.addInt(String8(AUDIO_PARAMETER_KEY_HANDLE_FM), (int)newDevice);
+            param.addInt(String8(AudioParameter::keyHandleFm), (int)newDevice);
             ALOGV("setDeviceConnectionState() setParameters handle_fm");
             mpClientInterface->setParameters(mPrimaryOutput, param.toString());
         }
@@ -861,8 +857,8 @@ audio_io_handle_t AudioPolicyManager::getOutput(AudioSystem::stream_type stream,
     return output;
 }
 status_t AudioPolicyManager::startOutput(audio_io_handle_t output,
-                                             audio_stream_type stream,
-                                             audio_session_t session)
+                                             AudioSystem::stream_type stream,
+                                             int session)
 {
     ALOGV("startOutput() output %d, stream %d, session %d", output, stream, session);
     ssize_t index = mOutputs.indexOfKey(output);
@@ -907,7 +903,7 @@ status_t AudioPolicyManager::startOutput(audio_io_handle_t output,
         }
 
 #ifdef QCOM_FM_ENABLED
-        if(stream == AudioSystem::MUSIC && output == getA2dpOutput()) {
+        if(stream == AudioSystem::FM && output == getA2dpOutput()) {
             muteWaitMs = setOutputDevice(output, newDevice, true);
         } else
 #endif
@@ -943,8 +939,8 @@ status_t AudioPolicyManager::startOutput(audio_io_handle_t output,
 
 
 status_t AudioPolicyManager::stopOutput(audio_io_handle_t output,
-                                            audio_stream_type stream,
-                                            audio_session_t session)
+                                            AudioSystem::stream_type stream,
+                                            int session)
 {
     ALOGV("stopOutput() output %d, stream %d, session %d", output, stream, session);
     ssize_t index = mOutputs.indexOfKey(output);
@@ -1480,6 +1476,9 @@ AudioPolicyManager::routing_strategy AudioPolicyManager::getStrategy(
     case AudioSystem::TTS:
     case AudioSystem::MUSIC:
     case AudioSystem::INCALL_MUSIC:
+#ifdef QCOM_FM_ENABLED
+    case AudioSystem::FM:
+#endif
         return STRATEGY_MEDIA;
     case AudioSystem::ENFORCED_AUDIBLE:
         return STRATEGY_ENFORCED_AUDIBLE;
@@ -1964,6 +1963,9 @@ status_t AudioPolicyManager::checkAndSetVolume(int stream,
     // - the float value returned by computeVolume() changed
     // - the force flag is set
     if (volume != mOutputs.valueFor(output)->mCurVolume[stream] ||
+#ifdef QCOM_FM_ENABLED
+            (stream == AudioSystem::FM) ||
+#endif
             force) {
         mOutputs.valueFor(output)->mCurVolume[stream] = volume;
         ALOGVV("checkAndSetVolume() for output %d stream %d, volume %f, delay %d", output, stream, volume, delayMs);
@@ -1972,18 +1974,14 @@ status_t AudioPolicyManager::checkAndSetVolume(int stream,
         if (stream == AudioSystem::BLUETOOTH_SCO) {
             mpClientInterface->setStreamVolume(AudioSystem::VOICE_CALL, volume, output, delayMs);
 #ifdef QCOM_FM_ENABLED
-        } else if ((stream == AudioSystem::MUSIC) && (mIsFmStream)) {
+        } else if (stream == AudioSystem::FM) {
             float fmVolume = -1.0;
             fmVolume = computeVolume(stream, index, output, device);
             if (fmVolume >= 0) {
-                if(output == mPrimaryOutput) {
-                    AudioParameter param = AudioParameter();
-                    param.addFloat(String8(AUDIO_PARAMETER_KEY_FM_VOLUME), fmVolume);
-                    ALOGV("checkAndSetVolume setParameters fm_volume");
-                    mpClientInterface->setParameters(mPrimaryOutput, param.toString());
-                } else if(mHasA2dp && output == getA2dpOutput()) {
+                if(output == mPrimaryOutput)
+                    mpClientInterface->setFmVolume(fmVolume, delayMs);
+                else if(mHasA2dp && output == getA2dpOutput())
                     mpClientInterface->setStreamVolume((AudioSystem::stream_type)stream, volume, output, delayMs);
-                }
             }
             return NO_ERROR;
 #endif
